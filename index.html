@@ -1,0 +1,2437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DX360 Fleet Ops</title>
+<meta name="description" content="Operations, rental-hour accounting and periodic maintenance tracking for the Doosan DX360 excavator.">
+<meta name="theme-color" content="#14181D">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DX360 Ops">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<style>
+/* ==========================================================================
+   DX360 Fleet Ops — design tokens
+   Palette: cool daylight-readable surface + dark instrument chrome for
+   the machine/hour readouts, safety-orange as the single accent
+   (heavy-equipment livery, not decoration). Status language (good /
+   warn / bad / info) is used consistently everywhere — badges, alerts,
+   milestone states — so colour always means the same thing.
+   Type: one system sans throughout; hour/number readouts get extra
+   weight + tabular figures rather than a second display face, so the
+   whole thing stays reliable with zero network font loading (this is
+   an offline-first site-use tool — a webfont that fails to load is a
+   worse look than "boring but works").
+   ========================================================================== */
+:root{
+  --bg:#F3F5F6;
+  --panel:#FFFFFF;
+  --panel-alt:#F7F9FA;
+  --ink:#12161B;
+  --ink-soft:#57626D;
+  --ink-faint:#8B95A0;
+  --line:#DFE4E8;
+  --line-soft:#EBEEF1;
+
+  --chrome:#14181D;
+  --chrome-soft:#1D2329;
+  --chrome-line:#2B333B;
+  --chrome-ink:#EDF0F3;
+  --chrome-ink-soft:#9BA6B0;
+
+  --accent:#FF6A00;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#FFEADA;
+  --accent-line:#FFB27A;
+
+  --good:#1E9A54;
+  --good-soft:#E4F5EA;
+  --warn:#B9790A;
+  --warn-soft:#FCEFD3;
+  --bad:#C93F3F;
+  --bad-soft:#FBE6E6;
+  --info:#2E6FA8;
+  --info-soft:#E4EFF8;
+
+  --radius:6px;
+  --radius-lg:10px;
+  --shadow-1:0 1px 2px rgba(18,22,27,.07);
+  --shadow-2:0 6px 24px rgba(18,22,27,.18);
+
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --sidebar-w:232px;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;font-family:var(--font);color:var(--ink);background:var(--bg);
+  -webkit-font-smoothing:antialiased;font-size:15px;line-height:1.45;
+}
+h1,h2,h3,h4,p,figure{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:inherit}
+ul{list-style:none;margin:0;padding:0}
+img{max-width:100%;display:block}
+::selection{background:var(--accent-soft)}
+
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.hidden{display:none !important}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001ms !important;transition-duration:.001ms !important}}
+
+/* ---------------------------------------------------------------- shell */
+#app{min-height:100%}
+
+.topbar{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:12px;
+  height:56px;padding:0 16px;
+  background:var(--chrome);color:var(--chrome-ink);
+  border-bottom:1px solid var(--chrome-line);
+}
+.topbar .brand{display:flex;align-items:center;gap:9px;font-weight:800;letter-spacing:-.01em;font-size:15px}
+.topbar .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.topbar .spacer{flex:1}
+.topbar .net{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--chrome-ink-soft);padding:5px 10px;border-radius:999px;border:1px solid var(--chrome-line)}
+.topbar .net .pip{width:7px;height:7px;border-radius:50%;background:var(--good)}
+.topbar .net.offline .pip{background:var(--bad)}
+.topbar .net.syncing .pip{background:var(--warn)}
+.topbar .who{font-size:13px;color:var(--chrome-ink-soft);display:flex;align-items:center;gap:8px}
+.topbar .who b{color:var(--chrome-ink);font-weight:700}
+.topbar button.signout{background:none;border:1px solid var(--chrome-line);color:var(--chrome-ink-soft);padding:6px 10px;border-radius:var(--radius);cursor:pointer}
+.topbar button.signout:hover{color:var(--chrome-ink);border-color:var(--chrome-ink-soft)}
+.topbar .menubtn{display:none;background:none;border:0;color:var(--chrome-ink);padding:6px;cursor:pointer}
+
+.shell{display:flex;min-height:calc(100% - 56px)}
+
+.sidebar{
+  width:var(--sidebar-w);flex:none;background:var(--chrome-soft);
+  border-right:1px solid var(--chrome-line);padding:14px 10px;
+  position:sticky;top:56px;align-self:flex-start;height:calc(100vh - 56px);overflow-y:auto;
+}
+.sidebar .grp{color:var(--chrome-ink-soft);font-size:11px;font-weight:700;padding:14px 10px 6px;letter-spacing:.02em}
+.sidebar .grp:first-child{padding-top:2px}
+.navlink{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:var(--radius);
+  color:var(--chrome-ink-soft);font-size:13.5px;font-weight:600;cursor:pointer;text-decoration:none;
+}
+.navlink:hover{background:var(--chrome-line);color:var(--chrome-ink)}
+.navlink.active{background:var(--accent);color:var(--accent-ink)}
+.navlink .ic{width:16px;text-align:center;font-size:13px}
+
+.main{flex:1;min-width:0;padding:20px 22px 90px}
+.page-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.page-head h1{font-size:20px;font-weight:800;letter-spacing:-.01em}
+.page-head .sub{color:var(--ink-soft);font-size:13px;margin-top:2px}
+.page-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+.bottomnav{display:none}
+
+/* ---------------------------------------------------------------- grid/cards */
+.grid{display:grid;gap:14px}
+.grid.cols-2{grid-template-columns:repeat(2,1fr)}
+.grid.cols-3{grid-template-columns:repeat(3,1fr)}
+.grid.cols-4{grid-template-columns:repeat(4,1fr)}
+@media (max-width:980px){.grid.cols-4{grid-template-columns:repeat(2,1fr)}.grid.cols-3{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:640px){.grid.cols-4,.grid.cols-3,.grid.cols-2{grid-template-columns:1fr}}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:16px}
+.card.tight{padding:12px 14px}
+.card > .card-title{font-size:12px;font-weight:700;color:var(--ink-soft);text-transform:none;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.card.pad-0{padding:0}
+
+/* Hero instrument readout — the one element allowed to be bold */
+.gauge{
+  background:var(--chrome);color:var(--chrome-ink);border-radius:var(--radius-lg);
+  padding:20px;box-shadow:var(--shadow-2);position:relative;overflow:hidden;
+}
+.gauge::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,106,0,.10),transparent 55%);pointer-events:none}
+.gauge .label{font-size:12px;color:var(--chrome-ink-soft);font-weight:600;margin-bottom:6px}
+.gauge .value{font-size:44px;font-weight:800;letter-spacing:-.02em;line-height:1}
+.gauge .value .unit{font-size:18px;color:var(--chrome-ink-soft);font-weight:700;margin-left:6px}
+.gauge .meta{margin-top:10px;font-size:12.5px;color:var(--chrome-ink-soft)}
+.gauge .meta b{color:var(--chrome-ink)}
+
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px 16px}
+.stat .label{font-size:12px;color:var(--ink-soft);font-weight:600}
+.stat .value{font-size:26px;font-weight:800;letter-spacing:-.01em;margin-top:4px}
+.stat .value small{font-size:13px;color:var(--ink-faint);font-weight:600;margin-left:4px}
+.stat .foot{font-size:12px;color:var(--ink-faint);margin-top:6px}
+
+/* ---------------------------------------------------------------- badges/status */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap}
+.badge.good{background:var(--good-soft);color:var(--good)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.badge.info{background:var(--info-soft);color:var(--info)}
+.badge.neutral{background:var(--panel-alt);color:var(--ink-soft);border:1px solid var(--line)}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+.alert{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;border-radius:var(--radius);border:1px solid var(--line);background:var(--panel-alt);font-size:13px}
+.alert.bad{background:var(--bad-soft);border-color:#f0c4c4;color:#7a2222}
+.alert.warn{background:var(--warn-soft);border-color:#eed6a0;color:#6b4c07}
+.alert.info{background:var(--info-soft);border-color:#c6dbee;color:#204669}
+.alert .ic{font-weight:800}
+.alert .txt{flex:1}
+.alert .txt b{display:block;font-size:13px}
+.alert .txt span{color:inherit;opacity:.85;font-size:12.5px}
+
+/* ---------------------------------------------------------------- buttons */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  padding:9px 14px;border-radius:var(--radius);font-weight:700;font-size:13.5px;
+  border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;
+  transition:background .12s,border-color .12s;
+}
+.btn:hover{background:var(--panel-alt)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{background:#e85f00}
+.btn.good{background:var(--good);border-color:var(--good);color:#fff}
+.btn.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn.ghost{background:transparent;border-color:transparent}
+.btn.ghost:hover{background:var(--panel-alt)}
+.btn.sm{padding:6px 10px;font-size:12.5px}
+.btn.lg{padding:15px 18px;font-size:15px;width:100%}
+.btn.block{width:100%}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Site-manager big action grid (glove-friendly, one-handed) */
+.actiongrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.actiongrid .btn.lg{min-height:58px;flex-direction:column;gap:3px}
+.actiongrid .btn.lg .k{font-size:11px;font-weight:600;opacity:.75}
+
+/* ---------------------------------------------------------------- forms */
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:5px}
+.field .hint{font-size:11.5px;color:var(--ink-faint);margin-top:4px}
+.field .err{font-size:11.5px;color:var(--bad);margin-top:4px;font-weight:600}
+input[type=text],input[type=number],input[type=email],input[type=password],input[type=date],input[type=time],input[type=datetime-local],select,textarea{
+  width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:64px}
+.field.invalid input,.field.invalid select,.field.invalid textarea{border-color:var(--bad)}
+.check{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.check input{width:16px;height:16px}
+fieldset{border:1px dashed var(--line);border-radius:var(--radius);padding:12px;margin:0 0 13px}
+fieldset legend{font-size:12px;font-weight:700;color:var(--ink-soft);padding:0 6px}
+.formrow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:560px){.formrow{grid-template-columns:1fr}}
+
+/* ---------------------------------------------------------------- tables -> cards */
+table.dt{width:100%;border-collapse:collapse;font-size:13.5px}
+table.dt th{text-align:left;font-size:11.5px;color:var(--ink-soft);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--line)}
+table.dt td{padding:9px 10px;border-bottom:1px solid var(--line-soft)}
+table.dt tbody tr:hover{background:var(--panel-alt)}
+@media (max-width:760px){
+  table.dt thead{display:none}
+  table.dt, table.dt tbody, table.dt tr, table.dt td{display:block;width:100%}
+  table.dt tr{border:1px solid var(--line);border-radius:var(--radius);margin-bottom:10px;padding:4px 2px}
+  table.dt td{border:0;display:flex;justify-content:space-between;gap:10px;padding:7px 10px}
+  table.dt td::before{content:attr(data-label);font-weight:700;color:var(--ink-soft);font-size:11.5px}
+}
+
+.list{display:flex;flex-direction:column;gap:8px}
+.rowcard{display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);cursor:pointer}
+.rowcard:hover{border-color:var(--ink-faint)}
+.rowcard .rc-main{flex:1;min-width:0}
+.rowcard .rc-title{font-weight:700;font-size:13.5px}
+.rowcard .rc-sub{font-size:12px;color:var(--ink-soft);margin-top:2px}
+.rowcard .rc-end{text-align:right;font-size:12.5px;color:var(--ink-soft)}
+
+/* ---------------------------------------------------------------- session timeline */
+.timeline{display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-soft)}
+.tl-item:last-child{border-bottom:0}
+.tl-marker{width:10px;height:10px;border-radius:50%;background:var(--good);margin-top:5px;flex:none}
+.tl-marker.stop{background:var(--ink-faint)}
+.tl-body{flex:1}
+.tl-time{font-weight:800;font-size:14px}
+.tl-reason{font-size:12.5px;color:var(--ink-soft)}
+.tl-dur{font-size:12px;color:var(--ink-faint)}
+
+/* ---------------------------------------------------------------- checklist */
+.checklist{display:flex;flex-direction:column;gap:6px}
+.ck-group-title{font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:14px 0 6px;display:flex;align-items:center;gap:6px}
+.ck-item{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel)}
+.ck-item.done{background:var(--good-soft);border-color:#cfe9d9}
+.ck-item.skipped{background:var(--panel-alt);opacity:.75}
+.ck-main{flex:1}
+.ck-name{font-weight:700;font-size:13.5px}
+.ck-action{font-size:12px;color:var(--ink-soft)}
+.ck-status{display:flex;gap:4px}
+.ck-status button{font-size:11px;padding:5px 8px;border-radius:var(--radius);border:1px solid var(--line);background:var(--panel);cursor:pointer;font-weight:700}
+.ck-status button.on{background:var(--chrome);color:#fff;border-color:var(--chrome)}
+
+/* ---------------------------------------------------------------- tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px;overflow-x:auto}
+.tab{padding:9px 12px;font-size:13px;font-weight:700;color:var(--ink-soft);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.active{color:var(--ink);border-bottom-color:var(--accent)}
+
+/* ---------------------------------------------------------------- modal/toast */
+.overlay{position:fixed;inset:0;background:rgba(15,18,22,.5);display:flex;align-items:flex-end;justify-content:center;z-index:100;padding:0}
+@media (min-width:680px){.overlay{align-items:center;padding:20px}}
+.modal{background:var(--panel);width:100%;max-width:560px;border-radius:var(--radius-lg) var(--radius-lg) 0 0;max-height:92vh;overflow-y:auto;box-shadow:var(--shadow-2)}
+@media (min-width:680px){.modal{border-radius:var(--radius-lg)}}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+.modal-head h3{font-size:15.5px;font-weight:800}
+.modal-close{background:none;border:0;font-size:18px;cursor:pointer;color:var(--ink-soft);padding:4px}
+.modal-body{padding:18px}
+.modal-foot{padding:14px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:var(--panel)}
+
+.toasts{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;width:min(92vw,420px)}
+.toast{background:var(--chrome);color:var(--chrome-ink);padding:11px 14px;border-radius:var(--radius);font-size:13px;box-shadow:var(--shadow-2);display:flex;gap:8px;align-items:center}
+.toast.bad{background:var(--bad)}
+.toast.good{background:var(--good)}
+
+/* ---------------------------------------------------------------- misc */
+.empty{padding:34px 18px;text-align:center;color:var(--ink-soft);border:1px dashed var(--line);border-radius:var(--radius-lg);font-size:13.5px}
+.empty b{display:block;color:var(--ink);font-size:14px;margin-bottom:4px}
+.divider{height:1px;background:var(--line);margin:16px 0}
+.muted{color:var(--ink-soft)}
+.faint{color:var(--ink-faint);font-size:12px}
+.mono-num{font-variant-numeric:tabular-nums}
+.pill-row{display:flex;gap:6px;flex-wrap:wrap}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--chrome)}
+.login-card{width:100%;max-width:380px;background:var(--panel);border-radius:var(--radius-lg);padding:26px;box-shadow:var(--shadow-2)}
+.login-card .brandline{display:flex;align-items:center;gap:9px;margin-bottom:4px}
+.login-card .brandline .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.login-card h1{font-size:19px;font-weight:800}
+.login-card .tag{color:var(--ink-soft);font-size:13px;margin:4px 0 18px}
+.login-switch{text-align:center;font-size:13px;color:var(--ink-soft);margin-top:12px}
+.login-switch button{background:none;border:0;color:var(--accent);font-weight:700;cursor:pointer;padding:0}
+.pending-box{text-align:center;padding:40px 20px}
+
+.kv{display:flex;flex-direction:column;gap:8px}
+.kv .row{display:flex;justify-content:space-between;gap:10px;font-size:13.5px;padding:6px 0;border-bottom:1px solid var(--line-soft)}
+.kv .row .k{color:var(--ink-soft)}
+.kv .row .v{font-weight:700;text-align:right}
+
+.offline-banner{display:none;background:var(--warn-soft);color:#6b4c07;font-size:12.5px;padding:8px 16px;text-align:center;font-weight:600;border-bottom:1px solid #eed6a0}
+.offline-banner.show{display:block}
+
+/* ---------------------------------------------------------------- responsive shell */
+@media (max-width:900px){
+  .sidebar{display:none}
+  .sidebar.open{display:block;position:fixed;left:0;top:56px;z-index:30;width:78vw;max-width:280px;box-shadow:var(--shadow-2)}
+  .topbar .menubtn{display:inline-flex}
+  .main{padding:14px 14px 96px}
+  .bottomnav{
+    display:flex;position:fixed;bottom:0;left:0;right:0;z-index:20;
+    background:var(--chrome);border-top:1px solid var(--chrome-line);
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+  }
+  .bottomnav a{
+    flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+    color:var(--chrome-ink-soft);font-size:10.5px;font-weight:700;padding:6px 2px;border-radius:var(--radius);text-decoration:none;
+  }
+  .bottomnav a .ic{font-size:15px}
+  .bottomnav a.active{color:var(--accent)}
+  .gauge .value{font-size:36px}
+  .who span.name{display:none}
+}
+
+/* ---------------------------------------------------------------- print */
+@media print{
+  .topbar,.sidebar,.bottomnav,.page-actions,.offline-banner,.toasts,.no-print{display:none !important}
+  .main{padding:0}
+  body{background:#fff}
+  .card{border-color:#999}
+  a[href]::after{content:""}
+}
+</style>
+</head>
+<body>
+<div id="offlineBanner" class="offline-banner"></div>
+<div id="app">
+  <div class="login-wrap" id="bootScreen">
+    <div class="login-card">
+      <div class="brandline"><span class="dot"></span><strong>DX360 Fleet Ops</strong></div>
+      <p class="tag">Loading…</p>
+    </div>
+  </div>
+</div>
+<div id="modalRoot"></div>
+<div class="toasts" id="toastRoot"></div>
+<script type="module">
+
+/* ===== 01-core.js ===== */
+/* =========================================================================
+   DX360 FLEET OPS — application script
+   Single-file PWA: Firebase Auth + Firestore only, no server code.
+   Sections in this file (search for the marker to jump):
+     [CONFIG]       Firebase project config — REPLACE before deploying
+     [CONST]        Fixed vocab: stop reasons, statuses, milestones...
+     [UTIL]         Formatting, date/time, small DOM helpers
+     [STATE]        In-memory app state
+     [FIRE]         Firebase init, offline persistence, connectivity
+     [CALC]         Calculation engine (section 74 of the spec)
+     [MILESTONE]    Milestone crossing / due-overdue engine
+     [AUTH]         Sign in / sign up / role gate
+     [DATA]         Firestore read/write helpers per collection
+     [AUDIT]        Audit log writer
+     [UI]            Toast / modal / confirm primitives
+     [ROUTER]       Hash router + shell render (sidebar/topbar/bottomnav)
+     [V:*]          One view module per screen
+     [BOOT]         Service worker registration + startup
+   ========================================================================= */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, doc, addDoc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
+  query, where, orderBy, limit as qlimit, onSnapshot, serverTimestamp,
+  Timestamp, runTransaction
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+/* ---------------------------------------------------------- [CONFIG] --- */
+// REPLACE with your own Firebase project's web config (Project settings
+// → General → Your apps → SDK setup and configuration). The app will
+// show a clear on-screen error instead of a blank page if you forget.
+const FIREBASE_CONFIG = {
+  apiKey: "REPLACE_ME",
+  authDomain: "REPLACE_ME.firebaseapp.com",
+  projectId: "REPLACE_ME",
+  storageBucket: "REPLACE_ME.appspot.com",
+  messagingSenderId: "REPLACE_ME",
+  appId: "REPLACE_ME"
+};
+
+/* ----------------------------------------------------------- [CONST] --- */
+const TZ = "Africa/Addis_Ababa";
+const CURRENCY = "ETB";
+
+const STOP_REASONS = [
+  "Lunch", "Rest Break", "Repair", "Maintenance", "Refueling",
+  "Breakdown", "Weather", "Site Shutdown", "Operator Issue", "Other",
+  "Work Done For The Day"
+];
+const FINAL_STOP_REASON = "Work Done For The Day";
+
+const MACHINE_STATUSES = [
+  "Operational", "Temporarily stopped", "Under repair",
+  "Waiting for parts", "Major breakdown", "Returned to operation"
+];
+
+const MAINTENANCE_TYPES = [
+  "Preventive", "Corrective", "Emergency", "Inspection",
+  "Lubrication", "Filter replacement", "Fluid replacement", "Other"
+];
+
+const MAINTENANCE_TASK_ACTIONS = [
+  "Inspect", "Check", "Grease", "Refill", "Clean", "Replace", "Drain", "Adjust", "Record"
+];
+
+const TASK_STATUSES = ["Pending", "In Progress", "Completed", "Skipped", "Not Applicable"];
+
+const USAGE_TYPES = ["Replaced", "Reused", "Maintained", "Purchased"];
+
+const REPLACEMENT_REASONS = [
+  "Normal service interval", "Damaged", "Worn", "Failed",
+  "Contaminated", "Preventive replacement", "Breakdown", "Other"
+];
+
+// Milestone tiers this app supports (section 21). Each tier RECURS every
+// N hours of lifetime machine operation (e.g. the 500h tier is due again
+// at 500, 1000, 1500, 2000h...) and a higher tier due at the same crossing
+// is understood to include that tier's tasks (section 23 cascading rule).
+// 5,000h is explicitly a custom Admin-configured major-service tier, not
+// an official Doosan interval (section 21/50) — flagged as such in the UI.
+const MAINTENANCE_MILESTONES = [50, 100, 250, 500, 1000, 2000, 5000];
+
+const NOTIF_PRIORITY = { INFO: "info", WARNING: "warn", DUE: "due", CRITICAL: "bad" };
+
+const ROLES = { ADMIN: "admin", SITE_MANAGER: "siteManager" };
+
+/* ------------------------------------------------------------ [UTIL] --- */
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+function round1(n) { return Math.round((Number(n) || 0) * 10) / 10; }
+function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+function fmtHours(h) {
+  const n = Number(h) || 0;
+  return n.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " h";
+}
+function fmtHoursMin(h) {
+  const n = Math.max(0, Number(h) || 0);
+  const whole = Math.floor(n);
+  const min = Math.round((n - whole) * 60);
+  return `${whole}h ${String(min).padStart(2, "0")}m`;
+}
+function fmtMoney(n) {
+  const v = Number(n) || 0;
+  return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + CURRENCY;
+}
+function fmtDate(d) {
+  if (!d) return "—";
+  const dt = toDate(d);
+  return dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: TZ });
+}
+function fmtDateTime(d) {
+  if (!d) return "—";
+  const dt = toDate(d);
+  return dt.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: TZ, hour12: false });
+}
+function fmtTime(d) {
+  if (!d) return "—";
+  const dt = toDate(d);
+  return dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TZ, hour12: false });
+}
+function toDate(d) {
+  if (d instanceof Date) return d;
+  if (d && typeof d.toDate === "function") return d.toDate();
+  return new Date(d);
+}
+function fmtISODateOnly(d) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(toDate(d));
+  const get = (t) => parts.find(p => p.type === t).value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+function todayISODate() {
+  // Calendar date in Africa/Addis_Ababa, e.g. "2026-09-15"
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
+  const get = (t) => parts.find(p => p.type === t).value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+function nowLocalHM() {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(new Date());
+  const get = (t) => parts.find(p => p.type === t).value;
+  return `${get("hour")}:${get("minute")}`;
+}
+// Combine a calendar date (YYYY-MM-DD) + time-of-day (HH:MM) into a real
+// Date, then apply the section-10 midnight-rollover rule relative to an
+// anchor Date (typically the previous event in the same daily log): if
+// the resulting time is earlier than or equal to the anchor, roll it
+// forward a day at a time until it isn't.
+function combineDateTime(isoDate, hm, anchor) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const [hh, mm] = hm.split(":").map(Number);
+  let dt = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
+  // Interpret the wall-clock as Addis time (UTC+3, no DST) for storage.
+  dt = new Date(dt.getTime() - 3 * 60 * 60 * 1000);
+  if (anchor) {
+    let guard = 0;
+    while (dt.getTime() <= anchor.getTime() && guard < 4) { dt = new Date(dt.getTime() + 24 * 60 * 60 * 1000); guard++; }
+  }
+  return dt;
+}
+function hoursBetween(start, end) {
+  if (!start || !end) return 0;
+  const a = toDate(start), b = toDate(end);
+  return Math.max(0, (b.getTime() - a.getTime()) / 3600000);
+}
+function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+/* ===== 02-state-fire-calc.js ===== */
+
+/* ----------------------------------------------------------- [STATE] --- */
+const state = {
+  user: null,            // Firebase Auth user
+  profile: null,         // users/{uid} doc data
+  role: null,
+  online: navigator.onLine,
+  pendingWrites: 0,
+  route: "#/dashboard",
+  sidebarOpen: false,
+  // caches, refreshed by listeners
+  machines: [],
+  projects: [],
+  users: [],
+  maintenanceSchedules: [],
+  cacheReady: false,
+};
+
+/* ------------------------------------------------------------ [FIRE] --- */
+const app = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch(() => {});
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
+
+function configLooksUnset() {
+  return !FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === "REPLACE_ME";
+}
+
+window.addEventListener("online", () => { state.online = true; renderNetStatus(); });
+window.addEventListener("offline", () => { state.online = false; renderNetStatus(); });
+
+function renderNetStatus() {
+  const el = $("#netStatus");
+  const banner = $("#offlineBanner");
+  if (!el) return;
+  if (!state.online) {
+    el.className = "net offline";
+    el.innerHTML = `<span class="pip"></span> Offline`;
+    if (banner) { banner.classList.add("show"); banner.textContent = state.pendingWrites > 0 ? `Offline — ${state.pendingWrites} record(s) waiting to sync` : "Offline — changes will sync when you're back online"; }
+  } else if (state.pendingWrites > 0) {
+    el.className = "net syncing";
+    el.innerHTML = `<span class="pip"></span> Syncing ${state.pendingWrites}`;
+    if (banner) { banner.classList.add("show"); banner.textContent = `Syncing ${state.pendingWrites} pending record(s)…`; }
+  } else {
+    el.className = "net";
+    el.innerHTML = `<span class="pip"></span> Online`;
+    if (banner) { banner.classList.remove("show"); }
+  }
+}
+
+// Track pending local writes across every live listener so the offline
+// banner reflects reality instead of guessing. Firestore's own cache
+// does the actual queuing/retry — this just surfaces its state.
+const pendingByListener = new Map();
+function trackPending(key, hasPending) {
+  pendingByListener.set(key, !!hasPending);
+  state.pendingWrites = Array.from(pendingByListener.values()).filter(Boolean).length;
+  renderNetStatus();
+}
+
+/* ------------------------------------------------------------ [CALC] --- */
+// Pure, deterministic calculation engine — section 74 of the spec.
+// Every function here takes plain data in and returns a plain number
+// out; none of them touch Firestore, so they're trivial to unit test.
+
+function calculateSessionDuration(session) {
+  return round2(hoursBetween(session.startTime, session.endTime));
+}
+function calculateBreakDuration(brk) {
+  return round2(hoursBetween(brk.startTime, brk.endTime));
+}
+function calculateDailyWorkingHours(sessions) {
+  return round2((sessions || []).reduce((sum, s) => sum + (s.endTime ? calculateSessionDuration(s) : 0), 0));
+}
+function calculateDailyDowntime(breaks) {
+  return round2((breaks || []).reduce((sum, b) => sum + (b.endTime ? calculateBreakDuration(b) : 0), 0));
+}
+function calculateRepairHours(breaks) {
+  return round2((breaks || []).filter(b => b.reason === "Repair" || b.reason === "Breakdown").reduce((s, b) => s + calculateBreakDuration(b), 0));
+}
+function calculateMaintenanceHours(breaks) {
+  return round2((breaks || []).filter(b => b.reason === "Maintenance").reduce((s, b) => s + calculateBreakDuration(b), 0));
+}
+function calculateRentalAmount(approvedWorkingHours, rentalRate) {
+  return round2((Number(approvedWorkingHours) || 0) * (Number(rentalRate) || 0));
+}
+function calculateProjectHours(approvedDailyLogs, projectId) {
+  return round2(approvedDailyLogs.filter(l => l.projectId === projectId && l.status === "approved").reduce((s, l) => s + (Number(l.totalWorkingHours) || 0), 0));
+}
+function calculateLifetimeHours(machine, approvedDailyLogs) {
+  const baseline = Number(machine?.initialHourMeter) || 0;
+  const approved = approvedDailyLogs.filter(l => l.machineId === machine?.id && l.status === "approved").reduce((s, l) => s + (Number(l.totalWorkingHours) || 0), 0);
+  return round2(baseline + approved);
+}
+function calculateUtilization(operatingHours, downtimeHours) {
+  const op = Number(operatingHours) || 0, down = Number(downtimeHours) || 0;
+  if (op + down <= 0) return 0;
+  return round1((op / (op + down)) * 100);
+}
+function calculateTotalItemCost(quantity, unitPrice) {
+  return round2((Number(quantity) || 0) * (Number(unitPrice) || 0));
+}
+
+/* -------------------------------------------------------- [MILESTONE] --- */
+// Interpretation (documented since the source spec leaves the exact
+// recurrence rule implicit — see section 75/76 worked examples, which
+// this reproduces exactly): each tier in MAINTENANCE_MILESTONES recurs
+// every N hours of LIFETIME machine hours. A tier's "next due" point is
+// the first multiple of N above the machine hours at which that tier
+// was last actually completed (not merely crossed — section 77).
+// If several tiers are overdue at once (a big hour jump), all of them
+// are surfaced independently, per section 76.
+function getMilestoneStatus(tierHours, currentLifetimeHours, completedRecordsForTier) {
+  const lastServiceHours = completedRecordsForTier.length
+    ? Math.max(...completedRecordsForTier.map(r => Number(r.machineHoursAtService) || 0))
+    : 0;
+  const cyclesServiced = Math.floor(lastServiceHours / tierHours);
+  const nextDueAt = (cyclesServiced + 1) * tierHours;
+  const remaining = round1(nextDueAt - currentLifetimeHours);
+  const cyclesCrossedSinceService = Math.max(0, Math.floor(currentLifetimeHours / tierHours) - cyclesServiced);
+  let priority, state, label;
+  if (remaining > 25) { priority = NOTIF_PRIORITY.INFO; state = "upcoming"; label = `Due in ${fmtHours(remaining)}`; }
+  else if (remaining > 0.05) { priority = NOTIF_PRIORITY.WARNING; state = "upcoming"; label = `Due in ${fmtHours(remaining)}`; }
+  else if (remaining > -0.05) { priority = NOTIF_PRIORITY.DUE; state = "due"; label = "Due now"; }
+  else { priority = NOTIF_PRIORITY.CRITICAL; state = "overdue"; label = `Overdue by ${fmtHours(Math.abs(remaining))}`; }
+  return { tierHours, nextDueAt, remaining, cyclesCrossedSinceService, priority, state, label };
+}
+function getAllMilestoneStatuses(currentLifetimeHours, maintenanceRecords, machineId) {
+  return MAINTENANCE_MILESTONES.map(tier => {
+    const recs = (maintenanceRecords || []).filter(r => r.machineId === machineId && Number(r.maintenanceMilestone) === tier && r.status === "Completed");
+    return getMilestoneStatus(tier, currentLifetimeHours, recs);
+  });
+}
+function getNextMaintenanceMilestone(currentLifetimeHours, maintenanceRecords, machineId) {
+  const all = getAllMilestoneStatuses(currentLifetimeHours, maintenanceRecords, machineId);
+  const overdue = all.filter(m => m.state === "overdue" || m.state === "due").sort((a, b) => a.remaining - b.remaining);
+  if (overdue.length) return overdue[0];
+  return all.sort((a, b) => a.remaining - b.remaining)[0];
+}
+function getMaintenanceStatus(m) { return m.state; } // 'upcoming' | 'due' | 'overdue'
+function calculateMaintenanceRemainingHours(tierHours, currentLifetimeHours, completedRecordsForTier) {
+  return getMilestoneStatus(tierHours, currentLifetimeHours, completedRecordsForTier).remaining;
+}
+// Tasks belonging to tierHours AND every lower tier it cascades over
+// (section 23) — e.g. the 1000h service includes 50/100/250/500/1000.
+function getCascadedTasks(schedules, tierHours) {
+  const tiers = MAINTENANCE_MILESTONES.filter(t => t <= tierHours);
+  const out = [];
+  tiers.forEach(t => {
+    const sched = (schedules || []).find(s => Number(s.milestoneHours) === t && s.active !== false);
+    if (sched && Array.isArray(sched.tasks)) {
+      sched.tasks.forEach(task => out.push({ ...task, sourceMilestone: t, inherited: t !== tierHours }));
+    }
+  });
+  return out;
+}
+
+/* ===== 03-auth-data-audit.js ===== */
+
+/* ------------------------------------------------------------ [AUTH] --- */
+async function doSignIn(email, password) {
+  await signInWithEmailAndPassword(auth, email, password);
+}
+async function doSignUp(name, email, password) {
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  // Pending profile — no role yet. Rules only allow creating your own
+  // doc in this exact shape; an Admin must activate + assign a role.
+  await setDoc(doc(db, "users", cred.user.uid), {
+    name, email, active: false,
+    assignedProjects: [], assignedMachines: [],
+    createdAt: serverTimestamp()
+  });
+}
+async function doSignOut() { await signOut(auth); }
+
+let unsubProfile = null;
+function watchAuth(onReady) {
+  onAuthStateChanged(auth, async (user) => {
+    state.user = user;
+    if (unsubProfile) { unsubProfile(); unsubProfile = null; }
+    if (!user) { state.profile = null; state.role = null; onReady(); return; }
+    unsubProfile = onSnapshot(doc(db, "users", user.uid), (snap) => {
+      trackPending("profile", snap.metadata.hasPendingWrites);
+      state.profile = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+      state.role = state.profile?.active ? state.profile.role : null;
+      onReady();
+    }, () => onReady());
+  });
+}
+
+/* ------------------------------------------------------------ [DATA] --- */
+const col = (name) => collection(db, name);
+const nowTS = () => serverTimestamp();
+
+function liveCollection(name, constraints, onData, key) {
+  const q = constraints && constraints.length ? query(col(name), ...constraints) : col(name);
+  return onSnapshot(q, (snap) => {
+    trackPending(key || name, snap.metadata.hasPendingWrites);
+    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    onData(rows);
+  }, (err) => { console.error(`[${name}]`, err); onData([]); });
+}
+async function getOne(name, id) {
+  const s = await getDoc(doc(db, name, id));
+  return s.exists() ? { id: s.id, ...s.data() } : null;
+}
+async function createDoc(name, data) {
+  const ref = await addDoc(col(name), { ...data, createdAt: nowTS(), createdBy: state.user?.uid || null });
+  return ref.id;
+}
+async function setDocById(name, id, data) {
+  await setDoc(doc(db, name, id), data, { merge: false });
+}
+async function patchDoc(name, id, data) {
+  await updateDoc(doc(db, name, id), data);
+}
+async function removeDoc(name, id) {
+  await deleteDoc(doc(db, name, id));
+}
+
+/* ----------------------------------------------------------- [AUDIT] --- */
+async function writeAudit(action, entityType, entityId, before, after, reason) {
+  try {
+    await addDoc(col("auditLogs"), {
+      timestamp: nowTS(),
+      userId: state.user?.uid || null,
+      userRole: state.role || null,
+      userName: state.profile?.name || state.user?.email || null,
+      action, entityType, entityId,
+      before: before ?? null, after: after ?? null,
+      reason: reason ?? null
+    });
+  } catch (e) { console.error("[audit]", e); }
+}
+
+/* ===== 04-ui-primitives.js ===== */
+
+/* -------------------------------------------------------------- [UI] --- */
+function toast(msg, kind) {
+  const root = $("#toastRoot");
+  const el = document.createElement("div");
+  el.className = "toast" + (kind ? " " + kind : "");
+  el.textContent = msg;
+  root.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; el.style.transition = "opacity .25s"; setTimeout(() => el.remove(), 260); }, 3400);
+}
+function errorMessage(e) {
+  const code = e && e.code;
+  if (code === "permission-denied" || /PERMISSION_DENIED/.test(String(e))) return "You don't have permission to perform this action.";
+  if (code === "auth/wrong-password" || code === "auth/invalid-credential") return "Incorrect email or password.";
+  if (code === "auth/user-not-found") return "No account found with that email.";
+  if (code === "auth/email-already-in-use") return "An account with that email already exists.";
+  if (code === "auth/weak-password") return "Password should be at least 6 characters.";
+  if (!state.online) return "You're offline — this will be saved once you're back online.";
+  return "Something went wrong. Please try again.";
+}
+
+function openModal({ title, bodyHTML, footHTML, onMount, wide }) {
+  const root = $("#modalRoot");
+  root.innerHTML = `
+    <div class="overlay" id="ovl">
+      <div class="modal" style="${wide ? "max-width:720px" : ""}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="modal-head"><h3>${esc(title)}</h3><button class="modal-close" id="mClose" aria-label="Close">✕</button></div>
+        <div class="modal-body">${bodyHTML}</div>
+        ${footHTML ? `<div class="modal-foot">${footHTML}</div>` : ""}
+      </div>
+    </div>`;
+  $("#mClose").onclick = closeModal;
+  $("#ovl").addEventListener("mousedown", (e) => { if (e.target.id === "ovl") closeModal(); });
+  if (onMount) onMount(root);
+}
+function closeModal() { $("#modalRoot").innerHTML = ""; }
+
+function confirmDialog({ title, message, confirmLabel, danger }) {
+  return new Promise((resolve) => {
+    openModal({
+      title,
+      bodyHTML: `<p style="font-size:14px;line-height:1.5">${esc(message)}</p>`,
+      footHTML: `<button class="btn" id="cCancel">Cancel</button><button class="btn ${danger ? "bad" : "primary"}" id="cOk">${esc(confirmLabel || "Confirm")}</button>`,
+      onMount: () => {
+        $("#cCancel").onclick = () => { closeModal(); resolve(false); };
+        $("#cOk").onclick = () => { closeModal(); resolve(true); };
+      }
+    });
+  });
+}
+function promptReasonDialog({ title, message, label }) {
+  return new Promise((resolve) => {
+    openModal({
+      title,
+      bodyHTML: `<p style="font-size:13.5px;color:var(--ink-soft);margin-bottom:10px">${esc(message || "")}</p>
+        <div class="field"><label>${esc(label || "Reason")}</label><textarea id="rReason" rows="3"></textarea><div class="err hidden" id="rErr">This field is required.</div></div>`,
+      footHTML: `<button class="btn" id="rCancel">Cancel</button><button class="btn primary" id="rOk">Submit</button>`,
+      onMount: () => {
+        $("#rCancel").onclick = () => { closeModal(); resolve(null); };
+        $("#rOk").onclick = () => {
+          const v = $("#rReason").value.trim();
+          if (!v) { $("#rErr").classList.remove("hidden"); return; }
+          closeModal(); resolve(v);
+        };
+      }
+    });
+  });
+}
+
+// Lightweight empty-state helper used across every list view.
+function emptyState(title, sub) {
+  return `<div class="empty"><b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</div>`;
+}
+function badge(kind, text) {
+  return `<span class="badge ${kind}"><span class="dot"></span>${esc(text)}</span>`;
+}
+function priorityBadge(priority, label) {
+  const map = { info: "info", warn: "warn", due: "bad", bad: "bad" };
+  return badge(map[priority] || "neutral", label);
+}
+function statusBadgeForLog(status) {
+  const map = {
+    draft: ["neutral", "Draft"], submitted: ["warn", "Pending approval"],
+    approved: ["good", "Approved"], rejected: ["bad", "Rejected"]
+  };
+  const [k, t] = map[status] || ["neutral", status || "—"];
+  return badge(k, t);
+}
+
+/* ===== 05-router-shell.js ===== */
+
+/* --------------------------------------------------------- [ROUTER] --- */
+const NAV_ADMIN = [
+  { grp: "Overview", items: [["#/dashboard", "Dashboard", "◆"]] },
+  { grp: "Operations", items: [["#/projects", "Projects", "▤"], ["#/machines", "Machines", "▦"], ["#/logs", "Daily Logs", "▥"]] },
+  { grp: "Service", items: [["#/maintenance", "Maintenance", "✚"], ["#/repairs", "Repairs", "⚑"], ["#/parts", "Parts & Expenses", "▧"]] },
+  { grp: "Insight", items: [["#/reports", "Reports", "▨"], ["#/telemetry", "Telemetry", "◈"]] },
+  { grp: "Admin", items: [["#/users", "Users", "◐"], ["#/settings", "Settings", "⚙"], ["#/audit", "Audit Log", "≡"]] },
+];
+const NAV_MANAGER = [
+  { grp: "", items: [["#/dashboard", "Dashboard", "◆"], ["#/today", "Today's Log", "▥"], ["#/machine", "Machine", "▦"]] },
+  { grp: "", items: [["#/maintenance", "Maintenance", "✚"], ["#/repairs", "Repairs", "⚑"], ["#/parts", "Parts", "▧"], ["#/history", "History", "≡"]] },
+];
+const BOTTOMNAV_MANAGER = [["#/dashboard", "Dashboard", "◆"], ["#/today", "Today", "▥"], ["#/maintenance", "Maint.", "✚"], ["#/history", "History", "≡"]];
+const BOTTOMNAV_ADMIN = [["#/dashboard", "Dashboard", "◆"], ["#/logs", "Logs", "▥"], ["#/maintenance", "Maint.", "✚"], ["#/reports", "Reports", "▨"]];
+
+const ROUTES = []; // { pattern:['maintenance',':machineId',':tier'], view: async(params)=>htmlString, title, sub }
+function route(pattern, view) { ROUTES.push({ pattern: pattern.split("/").filter(Boolean), view }); }
+
+function matchRoute(hash) {
+  const parts = (hash || "#/dashboard").replace(/^#\/?/, "").split("/").filter(Boolean);
+  for (const r of ROUTES) {
+    if (r.pattern.length !== parts.length) continue;
+    const params = {};
+    let ok = true;
+    for (let i = 0; i < r.pattern.length; i++) {
+      const p = r.pattern[i];
+      if (p.startsWith(":")) params[p.slice(1)] = decodeURIComponent(parts[i]);
+      else if (p !== parts[i]) { ok = false; break; }
+    }
+    if (ok) return { route: r, params };
+  }
+  return null;
+}
+
+function navFor() { return state.role === ROLES.ADMIN ? NAV_ADMIN : NAV_MANAGER; }
+function bottomNavFor() { return state.role === ROLES.ADMIN ? BOTTOMNAV_ADMIN : BOTTOMNAV_MANAGER; }
+
+function renderShell() {
+  const app = $("#app");
+  app.innerHTML = `
+    <div class="topbar">
+      <button class="menubtn" id="menuBtn" aria-label="Menu">☰</button>
+      <div class="brand"><span class="dot"></span>DX360 Fleet Ops</div>
+      <div class="spacer"></div>
+      <div class="net" id="netStatus"><span class="pip"></span> Online</div>
+      <div class="who"><span class="name">${esc(state.profile?.name || state.user?.email || "")}</span> <b>${state.role === ROLES.ADMIN ? "Admin" : "Site Manager"}</b></div>
+      <button class="signout" id="signOutBtn">Sign out</button>
+    </div>
+    <div class="shell">
+      <nav class="sidebar" id="sidebar">${renderNavGroups(navFor())}</nav>
+      <main class="main" id="mainView"></main>
+    </div>
+    <nav class="bottomnav" id="bottomnav">
+      ${bottomNavFor().map(([href, label, ic]) => `<a href="${href}" class="${state.route === href ? "active" : ""}"><span class="ic">${ic}</span>${esc(label)}</a>`).join("")}
+    </nav>`;
+  $("#signOutBtn").onclick = async () => { await doSignOut(); };
+  $("#menuBtn").onclick = () => { state.sidebarOpen = !state.sidebarOpen; $("#sidebar").classList.toggle("open", state.sidebarOpen); };
+  renderNetStatus();
+}
+function renderNavGroups(groups) {
+  return groups.map(g => `
+    ${g.grp ? `<div class="grp">${esc(g.grp)}</div>` : ""}
+    ${g.items.map(([href, label, ic]) => `<a class="navlink ${state.route === href ? "active" : ""}" href="${href}"><span class="ic">${ic}</span>${esc(label)}</a>`).join("")}
+  `).join("");
+}
+
+async function renderRoute() {
+  state.route = location.hash || "#/dashboard";
+  $$(".navlink, .bottomnav a").forEach(a => a.classList.toggle("active", a.getAttribute("href") === state.route.split("?")[0]));
+  const m = matchRoute(state.route.split("?")[0]);
+  const mainEl = $("#mainView");
+  if (!mainEl) return;
+  if (!m) { mainEl.innerHTML = emptyState("Page not found", "Use the navigation to get back on track."); return; }
+  try {
+    mainEl.innerHTML = `<div class="empty">Loading…</div>`;
+    await m.route.view(m.params, mainEl);
+  } catch (e) {
+    console.error(e);
+    mainEl.innerHTML = `<div class="alert bad"><span class="ic">!</span><div class="txt"><b>Couldn't load this page</b><span>${esc(errorMessage(e))}</span></div></div>`;
+  }
+  if (window.innerWidth <= 900) { state.sidebarOpen = false; $("#sidebar")?.classList.remove("open"); }
+}
+window.addEventListener("hashchange", renderRoute);
+
+function pageHead(title, sub, actionsHTML) {
+  return `<div class="page-head"><div><h1>${esc(title)}</h1>${sub ? `<div class="sub">${sub}</div>` : ""}</div>${actionsHTML ? `<div class="page-actions">${actionsHTML}</div>` : ""}</div>`;
+}
+
+/* ===== 06-login-boot.js ===== */
+
+/* ------------------------------------------------------------ [LOGIN] --- */
+function renderLogin(mode) {
+  const isSignup = mode === "signup";
+  $("#app").innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="brandline"><span class="dot"></span><strong>DX360 Fleet Ops</strong></div>
+        <h1>${isSignup ? "Create account" : "Sign in"}</h1>
+        <p class="tag">Doosan DX360 operations, rental hours &amp; maintenance.</p>
+        <form id="authForm">
+          ${isSignup ? `<div class="field"><label>Full name</label><input type="text" id="fName" required></div>` : ""}
+          <div class="field"><label>Email</label><input type="email" id="fEmail" required autocomplete="username"></div>
+          <div class="field"><label>Password</label><input type="password" id="fPass" required autocomplete="${isSignup ? "new-password" : "current-password"}" minlength="6"></div>
+          <div class="err hidden" id="authErr"></div>
+          <button type="submit" class="btn primary lg" id="authSubmit">${isSignup ? "Create account" : "Sign in"}</button>
+        </form>
+        <div class="login-switch">
+          ${isSignup ? `Already have an account? <button id="toSignIn">Sign in</button>` : `Need an account? <button id="toSignUp">Create one</button>`}
+        </div>
+      </div>
+    </div>`;
+  $("#toSignIn") && ($("#toSignIn").onclick = () => renderLogin("signin"));
+  $("#toSignUp") && ($("#toSignUp").onclick = () => renderLogin("signup"));
+  $("#authForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("#authSubmit"); btn.disabled = true;
+    const errEl = $("#authErr"); errEl.classList.add("hidden");
+    try {
+      if (isSignup) await doSignUp($("#fName").value.trim(), $("#fEmail").value.trim(), $("#fPass").value);
+      else await doSignIn($("#fEmail").value.trim(), $("#fPass").value);
+    } catch (err) {
+      errEl.textContent = errorMessage(err); errEl.classList.remove("hidden"); btn.disabled = false;
+    }
+  });
+}
+
+function renderPending() {
+  $("#app").innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card pending-box">
+        <div class="brandline" style="justify-content:center"><span class="dot"></span><strong>DX360 Fleet Ops</strong></div>
+        <h1 style="margin-top:14px">Account awaiting authorization</h1>
+        <p class="tag">Contact your administrator to assign your role and project access.</p>
+        <button class="btn" id="pendingSignOut">Sign out</button>
+      </div>
+    </div>`;
+  $("#pendingSignOut").onclick = () => doSignOut();
+}
+
+function renderConfigError() {
+  $("#app").innerHTML = `
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="brandline"><span class="dot"></span><strong>DX360 Fleet Ops</strong></div>
+        <h1>Firebase config needed</h1>
+        <p class="tag">Open index.html and replace the placeholder <code>FIREBASE_CONFIG</code> values near the top of the script with your own Firebase project's web app config, then reload.</p>
+      </div>
+    </div>`;
+}
+
+/* ------------------------------------------------------------- [BOOT] --- */
+let globalListenersStarted = false;
+function startGlobalListeners() {
+  if (globalListenersStarted) return;
+  globalListenersStarted = true;
+  liveCollection("machines", [], rows => { state.machines = rows; }, "machines");
+  liveCollection("projects", [], rows => { state.projects = rows; }, "projects");
+  liveCollection("maintenanceSchedules", [], rows => { state.maintenanceSchedules = rows; if ((location.hash || "").startsWith("#/settings")) drawScheduleGrid(); }, "schedules");
+  if (state.role === ROLES.ADMIN) {
+    liveCollection("users", [], rows => { state.users = rows; }, "users");
+  }
+}
+
+function boot() {
+  if (configLooksUnset()) { renderConfigError(); return; }
+  watchAuth(() => {
+    if (!state.user) { renderLogin("signin"); return; }
+    if (!state.role) { renderPending(); return; }
+    startGlobalListeners();
+    if (!$("#mainView")) renderShell();
+    else { $$(".who b")[0] && ($$(".who b")[0].textContent = state.role === ROLES.ADMIN ? "Admin" : "Site Manager"); }
+    renderRoute();
+  });
+}
+
+function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+  });
+}
+
+/* ===== 07-dailylog-data.js ===== */
+
+/* --------------------------------------------------- [DAILY LOG DATA] --- */
+// All read/write logic for the Daily Log → Sessions → Breaks/Repairs/
+// Maintenance/Parts chain lives here, separate from the view code that
+// renders it, so the state machine has one home.
+
+async function findTodayLog(projectId, machineId, managerId) {
+  const date = todayISODate();
+  const snap = await getDocs(query(col("dailyLogs"),
+    where("projectId", "==", projectId), where("machineId", "==", machineId),
+    where("managerId", "==", managerId), where("date", "==", date)));
+  if (snap.empty) return null;
+  return { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+async function ensureTodayLog(project, machine, managerId) {
+  let log = await findTodayLog(project.id, machine.id, managerId);
+  if (log) return log;
+  const id = await createDoc("dailyLogs", {
+    date: todayISODate(), projectId: project.id, machineId: machine.id, managerId,
+    status: "draft", rentalRate: Number(project.rentalRate) || 0,
+    totalWorkingHours: 0, totalDowntimeHours: 0, totalRepairHours: 0, totalMaintenanceHours: 0,
+    rentalAmount: 0, notes: ""
+  });
+  return await getOne("dailyLogs", id);
+}
+async function fetchLogChildren(logId) {
+  const [sessSnap, brkSnap, repSnap, maintSnap, partsSnap] = await Promise.all([
+    getDocs(query(col("operatingSessions"), where("dailyLogId", "==", logId))),
+    getDocs(query(col("breakRecords"), where("dailyLogId", "==", logId))),
+    getDocs(query(col("repairRecords"), where("dailyLogId", "==", logId))),
+    getDocs(query(col("maintenanceRecords"), where("dailyLogId", "==", logId))),
+    getDocs(query(col("parts"), where("dailyLogId", "==", logId))),
+  ]);
+  const byStart = (a, b) => (a.startTime?.toMillis?.() || 0) - (b.startTime?.toMillis?.() || 0);
+  return {
+    sessions: sessSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byStart),
+    breaks: brkSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byStart),
+    repairs: repSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+    maintenance: maintSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+    parts: partsSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+  };
+}
+function lastEvent(sessions, breaks) {
+  const events = [
+    ...sessions.map(s => ({ t: s.endTime || s.startTime, isOpenSession: !s.endTime, s })),
+    ...breaks.map(b => ({ t: b.endTime || b.startTime, isOpenBreak: !b.endTime, b }))
+  ].filter(e => e.t).sort((a, b) => toDate(b.t) - toDate(a.t));
+  return events[0] || null;
+}
+// Determines the Site Manager's current on-the-ground state so the
+// dashboard can show the right single next action (section 33/34).
+function getTodayLogState(log, sessions, breaks) {
+  if (!log || (!sessions.length && !breaks.length)) return { status: "not_started" };
+  if (log.status !== "draft" && log.status !== "rejected") return { status: "locked", logStatus: log.status };
+  const openSession = sessions.find(s => !s.endTime);
+  if (openSession) return { status: "working", openSession };
+  const openBreak = breaks.find(b => !b.endTime);
+  if (openBreak) return { status: "break", openBreak, reason: openBreak.reason };
+  const lastClosedSession = [...sessions].sort((a, b) => toDate(b.endTime) - toDate(a.endTime))[0];
+  if (lastClosedSession && lastClosedSession.stopReason === FINAL_STOP_REASON) return { status: "day_done", lastClosedSession };
+  if (lastClosedSession) return { status: "stopped", lastClosedSession, reason: lastClosedSession.stopReason };
+  return { status: "not_started" };
+}
+
+async function startWork(log, startTime) {
+  await createDoc("operatingSessions", { dailyLogId: log.id, machineId: log.machineId, projectId: log.projectId, startTime: Timestamp.fromDate(startTime), endTime: null, stopReason: null });
+}
+async function stopWork(session, endTime, reason) {
+  await patchDoc("operatingSessions", session.id, { endTime: Timestamp.fromDate(endTime), stopReason: reason });
+  if (reason !== FINAL_STOP_REASON) {
+    await createDoc("breakRecords", { dailyLogId: session.dailyLogId, machineId: session.machineId, projectId: session.projectId, startTime: Timestamp.fromDate(endTime), endTime: null, reason, notes: "" });
+  }
+  await recomputeLogTotals(session.dailyLogId);
+}
+async function continueWork(openBreak, startTime) {
+  await patchDoc("breakRecords", openBreak.id, { endTime: Timestamp.fromDate(startTime) });
+  await createDoc("operatingSessions", { dailyLogId: openBreak.dailyLogId, machineId: openBreak.machineId, projectId: openBreak.projectId, startTime: Timestamp.fromDate(startTime), endTime: null, stopReason: null });
+  await recomputeLogTotals(openBreak.dailyLogId);
+}
+async function recomputeLogTotals(logId) {
+  const log = await getOne("dailyLogs", logId);
+  if (!log || (log.status !== "draft" && log.status !== "rejected")) return;
+  const { sessions, breaks } = await fetchLogChildren(logId);
+  const totalWorkingHours = calculateDailyWorkingHours(sessions);
+  const totalDowntimeHours = calculateDailyDowntime(breaks);
+  const totalRepairHours = calculateRepairHours(breaks);
+  const totalMaintenanceHours = calculateMaintenanceHours(breaks);
+  const rentalAmount = calculateRentalAmount(totalWorkingHours, log.rentalRate);
+  await patchDoc("dailyLogs", logId, { totalWorkingHours, totalDowntimeHours, totalRepairHours, totalMaintenanceHours, rentalAmount });
+}
+
+function validateDailyLogForSubmit(log, sessions, breaks, repairs, parts) {
+  const errors = [];
+  if (!sessions.length) errors.push("Add at least one operating session before submitting.");
+  sessions.forEach((s, i) => {
+    if (!s.startTime) errors.push(`Session ${i + 1} is missing a start time.`);
+    if (!s.endTime) errors.push(`Session ${i + 1} has not been stopped yet.`);
+    if (s.endTime && !s.stopReason) errors.push(`Session ${i + 1} is missing a stop reason.`);
+  });
+  const last = [...sessions].sort((a, b) => toDate(b.endTime || 0) - toDate(a.endTime || 0))[0];
+  if (last && last.stopReason && last.stopReason !== FINAL_STOP_REASON) {
+    errors.push(`The last session stopped for "${last.stopReason}" — start the next session or select "Work Done For The Day" to close it out.`);
+  }
+  // Overlap check across working sessions.
+  const sorted = [...sessions].filter(s => s.startTime && s.endTime).sort((a, b) => toDate(a.startTime) - toDate(b.startTime));
+  for (let i = 1; i < sorted.length; i++) {
+    if (toDate(sorted[i].startTime) < toDate(sorted[i - 1].endTime)) errors.push("Two operating sessions overlap — check the start/stop times.");
+  }
+  sessions.forEach(s => { if (s.endTime && calculateSessionDuration(s) < 0) errors.push("A session has an invalid (negative) duration."); });
+  repairs.forEach((r, i) => { if (!r.problemDescription) errors.push(`Repair record ${i + 1} is missing a problem description.`); });
+  parts.forEach((p) => {
+    if (p.usageType === "Purchased" && !(Number(p.unitPrice) > 0)) errors.push(`Purchased item "${p.itemName || "—"}" is missing a price.`);
+    if (p.usageType === "Replaced" && !p.reason) errors.push(`Replaced item "${p.itemName || "—"}" is missing a reason for replacement.`);
+  });
+  return errors;
+}
+
+async function submitDailyLog(log) {
+  const { sessions, breaks, repairs, parts } = await fetchLogChildren(log.id);
+  const errors = validateDailyLogForSubmit(log, sessions, breaks, repairs, parts);
+  if (errors.length) return { ok: false, errors };
+  await recomputeLogTotals(log.id);
+  await patchDoc("dailyLogs", log.id, { status: "submitted", submittedAt: nowTS() });
+  await writeAudit("Daily report submitted", "dailyLogs", log.id, { status: log.status }, { status: "submitted" });
+  return { ok: true };
+}
+
+async function approveDailyLog(log) {
+  await runTransaction(db, async (tx) => {
+    const machineRef = doc(db, "machines", log.machineId);
+    const projectRef = doc(db, "projects", log.projectId);
+    const logRef = doc(db, "dailyLogs", log.id);
+    const [mSnap, pSnap, lSnap] = await Promise.all([tx.get(machineRef), tx.get(projectRef), tx.get(logRef)]);
+    if (!lSnap.exists() || lSnap.data().status !== "submitted") throw new Error("This report is no longer pending approval.");
+    const hours = Number(lSnap.data().totalWorkingHours) || 0;
+    const mData = mSnap.data() || {};
+    const pData = pSnap.data() || {};
+    tx.update(machineRef, { lifetimeHours: round2((Number(mData.lifetimeHours) || Number(mData.initialHourMeter) || 0) + hours) });
+    tx.update(projectRef, { projectHours: round2((Number(pData.projectHours) || 0) + hours) });
+    tx.update(logRef, { status: "approved", approvedAt: nowTS(), approvedBy: state.user.uid });
+  });
+  await writeAudit("Daily report approved", "dailyLogs", log.id, { status: "submitted" }, { status: "approved" });
+}
+async function rejectDailyLog(log, reason) {
+  await patchDoc("dailyLogs", log.id, { status: "rejected", rejectionReason: reason });
+  await writeAudit("Daily report rejected", "dailyLogs", log.id, { status: "submitted" }, { status: "rejected" }, reason);
+}
+
+/* ===== 08-dashboards.js ===== */
+
+/* ----------------------------------------------------------- [V:DASH] --- */
+function getManagerContext() {
+  const p = state.profile || {};
+  const projectId = state.currentProjectId || (p.assignedProjects || [])[0];
+  const machineId = state.currentMachineId || (p.assignedMachines || [])[0];
+  const project = state.projects.find(x => x.id === projectId) || null;
+  const machine = state.machines.find(x => x.id === machineId) || null;
+  return { project, machine };
+}
+async function fetchMaintenanceRecordsFor(machineId) {
+  const snap = await getDocs(query(col("maintenanceRecords"), where("machineId", "==", machineId)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+async function fetchOpenRepairsFor(machineId) {
+  const snap = await getDocs(query(col("repairRecords"), where("machineId", "==", machineId)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.machineStatus && !["Operational", "Returned to operation"].includes(r.machineStatus));
+}
+
+route("dashboard", async (params, el) => {
+  if (state.role === ROLES.ADMIN) return renderAdminDashboard(el);
+  return renderManagerDashboard(el);
+});
+
+async function renderAdminDashboard(el) {
+  if (!state.machines.length) {
+    el.innerHTML = pageHead("Dashboard", "Fleet overview") + emptyState("No machines yet", "Add a machine under Machines to get started.");
+    return;
+  }
+  const machine = state.machines.find(m => m.id === state.dashMachineId) || state.machines[0];
+  state.dashMachineId = machine.id;
+  const [maintRecs, openRepairs, submittedSnap, todaySnap] = await Promise.all([
+    fetchMaintenanceRecordsFor(machine.id),
+    fetchOpenRepairsFor(machine.id),
+    getDocs(query(col("dailyLogs"), where("machineId", "==", machine.id), where("status", "==", "submitted"))),
+    getDocs(query(col("dailyLogs"), where("machineId", "==", machine.id), where("date", "==", todayISODate()))),
+  ]);
+  const pending = submittedSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const todayLogs = todaySnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const todayApproved = todayLogs.filter(l => l.status === "approved");
+  const todayWorking = round1(todayLogs.reduce((s, l) => s + (Number(l.totalWorkingHours) || 0), 0));
+  const todayDowntime = round1(todayLogs.reduce((s, l) => s + (Number(l.totalDowntimeHours) || 0), 0));
+  const todayRental = round2(todayApproved.reduce((s, l) => s + (Number(l.rentalAmount) || 0), 0));
+  const lifetimeHours = Number(machine.lifetimeHours ?? machine.initialHourMeter) || 0;
+  const project = state.projects.find(p => p.id === machine.currentProjectId) || state.projects.find(p => p.status === "Active" && p.machineId === machine.id);
+  const milestones = getAllMilestoneStatuses(lifetimeHours, maintRecs, machine.id);
+  const nextMilestone = getNextMaintenanceMilestone(lifetimeHours, maintRecs, machine.id);
+  const overdue = milestones.filter(m => m.state === "overdue");
+  const due = milestones.filter(m => m.state === "due");
+
+  const alerts = [];
+  overdue.forEach(m => alerts.push({ kind: "bad", text: `${m.tierHours}-hour service overdue by ${fmtHours(Math.abs(m.remaining))}${m.cyclesCrossedSinceService > 1 ? ` (${m.cyclesCrossedSinceService} cycles missed)` : ""}` }));
+  due.forEach(m => alerts.push({ kind: "warn", text: `${m.tierHours}-hour service due now` }));
+  if (pending.length) alerts.push({ kind: "info", text: `${pending.length} daily report${pending.length > 1 ? "s" : ""} pending approval` });
+  openRepairs.forEach(r => alerts.push({ kind: "bad", text: `Repair in progress — ${r.machineStatus}${r.problemDescription ? `: ${r.problemDescription}` : ""}` }));
+  if (!todayLogs.length) alerts.push({ kind: "info", text: "No daily report submitted for today yet" });
+
+  el.innerHTML = `
+    ${pageHead("Dashboard", `Fleet overview · ${fmtDate(new Date())}`,
+      state.machines.length > 1 ? `<select id="dashMachineSel" class="btn sm">${state.machines.map(m => `<option value="${m.id}" ${m.id === machine.id ? "selected" : ""}>${esc(m.machineId || m.model || m.id)}</option>`).join("")}</select>` : "")}
+    <div class="grid cols-4" style="margin-bottom:14px">
+      <div class="gauge">
+        <div class="label">${esc(machine.machineId || machine.model || "Machine")} · ${badge(machine.status === "Active" ? "good" : "neutral", machine.status || "Active")}</div>
+        <div class="value num">${lifetimeHours.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<span class="unit">lifetime h</span></div>
+        <div class="meta">Project hours: <b class="num">${fmtHours(project?.projectHours || 0)}</b></div>
+      </div>
+      <div class="stat"><div class="label">Today's working hours</div><div class="value num">${fmtHours(todayWorking)}</div><div class="foot">across ${todayLogs.length} report${todayLogs.length === 1 ? "" : "s"}</div></div>
+      <div class="stat"><div class="label">Today's downtime</div><div class="value num">${fmtHours(todayDowntime)}</div><div class="foot">break, repair &amp; maintenance</div></div>
+      <div class="stat"><div class="label">Today's rental amount</div><div class="value num">${fmtMoney(todayRental)}</div><div class="foot">approved hours only</div></div>
+    </div>
+    <div class="grid cols-2">
+      <div class="card">
+        <div class="card-title">Current maintenance</div>
+        ${nextMilestone ? `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div><b style="font-size:15px">${nextMilestone.tierHours}-hour service</b><div class="faint">${nextMilestone.label}</div></div>
+            ${priorityBadge(nextMilestone.priority, nextMilestone.state === "overdue" ? "Overdue" : nextMilestone.state === "due" ? "Due" : "Upcoming")}
+          </div>
+          <a class="btn sm block" href="#/maintenance/${machine.id}/${nextMilestone.tierHours}">Open checklist</a>` : emptyState("No milestones configured")}
+        <div class="divider"></div>
+        <div class="card-title">Alerts</div>
+        <div class="list">${alerts.length ? alerts.map(a => `<div class="alert ${a.kind}"><span class="ic">${a.kind === "bad" ? "!" : a.kind === "warn" ? "⚠" : "i"}</span><div class="txt">${esc(a.text)}</div></div>`).join("") : emptyState("All clear", "No alerts right now.")}</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pending approval <span class="badge neutral">${pending.length}</span></div>
+        <div class="list">
+          ${pending.length ? pending.map(l => `<a class="rowcard" href="#/logs/${l.id}">
+              <div class="rc-main"><div class="rc-title">${fmtDate(l.date)}</div><div class="rc-sub">${fmtHours(l.totalWorkingHours)} working · ${fmtMoney(l.rentalAmount)}</div></div>
+              <div class="rc-end">${statusBadgeForLog(l.status)}</div>
+            </a>`).join("") : emptyState("Nothing pending", "Submitted reports will show up here.")}
+        </div>
+      </div>
+    </div>`;
+  const sel = $("#dashMachineSel");
+  if (sel) sel.onchange = () => { state.dashMachineId = sel.value; renderAdminDashboard(el); };
+}
+
+async function renderManagerDashboard(el) {
+  const { project, machine } = getManagerContext();
+  if (!project || !machine) {
+    el.innerHTML = pageHead("Dashboard", "") + emptyState("No project assigned yet", "Ask your administrator to assign you to a project and machine.");
+    return;
+  }
+  const log = await ensureTodayLog(project, machine, state.user.uid);
+  const { sessions, breaks } = await fetchLogChildren(log.id);
+  const st = getTodayLogState(log, sessions, breaks);
+  const workingHours = calculateDailyWorkingHours(sessions);
+  const downtimeHours = calculateDailyDowntime(breaks);
+  const maintRecs = await fetchMaintenanceRecordsFor(machine.id);
+  const lifetimeHours = Number(machine.lifetimeHours ?? machine.initialHourMeter) || 0;
+  const next = getNextMaintenanceMilestone(lifetimeHours, maintRecs, machine.id);
+
+  const statusLabel = { not_started: "Not started", working: "Working", break: `On break — ${st.reason || ""}`, stopped: `Stopped — ${st.reason || ""}`, day_done: "Day complete", locked: log.status === "submitted" ? "Submitted — awaiting approval" : "Approved" }[st.status];
+  const statusKind = { not_started: "neutral", working: "good", break: "warn", stopped: "warn", day_done: "info", locked: log.status === "approved" ? "good" : "info" }[st.status];
+
+  el.innerHTML = `
+    ${pageHead("Dashboard", fmtDate(new Date()))}
+    <div class="grid cols-2" style="margin-bottom:14px">
+      <div class="gauge">
+        <div class="label">${esc(machine.machineId || machine.model || "Machine")}</div>
+        <div class="value num">${lifetimeHours.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}<span class="unit">hour meter</span></div>
+        <div class="meta">${badge(statusKind, statusLabel)}</div>
+      </div>
+      <div class="grid cols-2">
+        <div class="stat"><div class="label">Today's working hours</div><div class="value num">${fmtHours(workingHours)}</div></div>
+        <div class="stat"><div class="label">Today's downtime</div><div class="value num">${fmtHours(downtimeHours)}</div></div>
+        <div class="stat" style="grid-column:1/-1"><div class="label">Next maintenance</div><div class="value" style="font-size:18px">${next.tierHours}h service <span class="faint">— ${next.label}</span></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Actions</div>
+      <div id="actionGrid"></div>
+    </div>`;
+  renderManagerActionGrid($("#actionGrid"), log, sessions, breaks, st, () => renderManagerDashboard(el));
+}
+
+// Shared between the Dashboard and Today's Log screens so the big
+// action buttons behave identically wherever they appear.
+function renderManagerActionGrid(container, log, sessions, breaks, st, onChange) {
+  const btn = (action, label, sub, kind) => `<button class="btn lg ${kind || ""}" data-act="${action}"><span>${esc(label)}</span>${sub ? `<span class="k">${esc(sub)}</span>` : ""}</button>`;
+  let html = `<div class="actiongrid">`;
+  if (st.status === "not_started") html += btn("start", "Start Work", nowLocalHM(), "primary");
+  if (st.status === "working") html += btn("stop", "Stop Work", nowLocalHM(), "bad");
+  if (st.status === "break" || st.status === "stopped") {
+    html += btn("continue", "Continue Work", nowLocalHM(), "primary");
+    if (st.reason === "Repair" || st.reason === "Breakdown") html += btn("addrepair", "Add Repair Details", "", "");
+    if (st.reason === "Maintenance") html += btn("addmaint", "Add Maintenance Details", "", "");
+  }
+  if (st.status === "working" || st.status === "break" || st.status === "stopped" || st.status === "day_done") html += btn("additem", "Add Item", "parts / materials", "");
+  if (st.status === "day_done" && (log.status === "draft" || log.status === "rejected")) html += btn("submit", "Submit Daily Report", "", "good");
+  if (st.status === "locked") html += `<div class="alert info" style="grid-column:1/-1"><span class="ic">i</span><div class="txt"><b>${log.status === "approved" ? "Approved" : "Submitted"}</b><span>${log.status === "approved" ? "This report is finalized and can no longer be edited." : "Waiting for administrator review."}</span></div></div>`;
+  html += `</div>`;
+  container.innerHTML = html;
+  $$('[data-act]', container).forEach(b => b.onclick = () => handleManagerAction(b.dataset.act, log, sessions, breaks, st, onChange));
+}
+
+async function handleManagerAction(act, log, sessions, breaks, st, onChange) {
+  try {
+    if (act === "start") { await startWork(log, new Date()); onChange(); return; }
+    if (act === "stop") { openStopWorkModal(log, st.openSession, onChange); return; }
+    if (act === "continue") { await continueWork(st.openBreak, new Date()); onChange(); return; }
+    if (act === "addrepair") { openRepairModal(log, st.openBreak, onChange); return; }
+    if (act === "addmaint") { openMaintenanceRecordModal(log, st.openBreak, onChange); return; }
+    if (act === "additem") { openPartModal(log, onChange); return; }
+    if (act === "submit") {
+      const ok = await confirmDialog({ title: "Submit daily report", message: "Once submitted, you won't be able to edit this report unless it's rejected. Continue?", confirmLabel: "Submit" });
+      if (!ok) return;
+      const res = await submitDailyLog(log);
+      if (!res.ok) { openValidationErrorsModal(res.errors); return; }
+      toast("Daily report submitted", "good"); onChange(); return;
+    }
+  } catch (e) { console.error(e); toast(errorMessage(e), "bad"); }
+}
+function openValidationErrorsModal(errors) {
+  openModal({ title: "Fix these before submitting", bodyHTML: `<ul style="display:flex;flex-direction:column;gap:8px">${errors.map(e => `<li class="alert bad" style="border-radius:6px"><span class="ic">!</span><div class="txt">${esc(e)}</div></li>`).join("")}</ul>`, footHTML: `<button class="btn primary" id="okClose">Got it</button>`, onMount: () => $("#okClose").onclick = closeModal });
+}
+
+/* ===== 09-modals-stop-repair-maint-part.js ===== */
+
+/* ------------------------------------------------------ [V:MODALS] --- */
+function timeInputNow() { return nowLocalHM(); }
+
+function openStopWorkModal(log, session, onChange) {
+  openModal({
+    title: "Stop Work",
+    bodyHTML: `
+      <div class="field"><label>Stop time</label><input type="time" id="stTime" value="${timeInputNow()}"></div>
+      <div class="field"><label>Reason for stop</label>
+        <select id="stReason">${STOP_REASONS.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select>
+        <div class="hint">Choosing anything other than "Work Done For The Day" will open a break until you continue work.</div>
+      </div>`,
+    footHTML: `<button class="btn" id="stCancel">Cancel</button><button class="btn bad" id="stOk">Stop Work</button>`,
+    onMount: () => {
+      $("#stCancel").onclick = closeModal;
+      $("#stOk").onclick = async () => {
+        const reason = $("#stReason").value;
+        const endTime = combineDateTime(log.date, $("#stTime").value, toDate(session.startTime));
+        closeModal();
+        try { await stopWork(session, endTime, reason); toast(`Session stopped — ${reason}`, "good"); onChange(); }
+        catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+async function findRecordForBreak(collectionName, breakId) {
+  if (!breakId) return null;
+  const snap = await getDocs(query(col(collectionName), where("breakId", "==", breakId)));
+  return snap.empty ? null : { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+async function openRepairModal(log, openBreak, onChange) {
+  const existing = await findRecordForBreak("repairRecords", openBreak?.id);
+  openModal({
+    title: "Repair details", wide: true,
+    bodyHTML: `
+      <div class="formrow">
+        <div class="field"><label>Machine status</label><select id="rpStatus">${MACHINE_STATUSES.map(s => `<option ${s === existing?.machineStatus ? "selected" : ""}>${esc(s)}</option>`).join("")}</select></div>
+        <div class="field"><label>Technician</label><input type="text" id="rpTech" placeholder="Name" value="${esc(existing?.technician || "")}"></div>
+      </div>
+      <div class="field"><label>Problem description *</label><textarea id="rpDesc" rows="2">${esc(existing?.problemDescription || "")}</textarea></div>
+      <div class="formrow">
+        <div class="field"><label>Cause</label><input type="text" id="rpCause" value="${esc(existing?.cause || "")}"></div>
+        <div class="field"><label>Action taken</label><input type="text" id="rpAction" value="${esc(existing?.actionTaken || "")}"></div>
+      </div>
+      <div class="field"><label>Notes</label><textarea id="rpNotes" rows="2">${esc(existing?.notes || "")}</textarea></div>
+      <div class="err hidden" id="rpErr">Problem description is required.</div>`,
+    footHTML: `<button class="btn" id="rpCancel">Cancel</button><button class="btn primary" id="rpOk">Save Repair</button>`,
+    onMount: () => {
+      $("#rpCancel").onclick = closeModal;
+      $("#rpOk").onclick = async () => {
+        const desc = $("#rpDesc").value.trim();
+        if (!desc) { $("#rpErr").classList.remove("hidden"); return; }
+        const data = {
+          dailyLogId: log.id, machineId: log.machineId, projectId: log.projectId, breakId: openBreak?.id || null,
+          repairStart: openBreak?.startTime || Timestamp.fromDate(new Date()),
+          repairEnd: openBreak?.endTime || null,
+          problemDescription: desc, cause: $("#rpCause").value.trim(), actionTaken: $("#rpAction").value.trim(),
+          technician: $("#rpTech").value.trim(), machineStatus: $("#rpStatus").value, notes: $("#rpNotes").value.trim(),
+        };
+        closeModal();
+        try {
+          if (existing) await patchDoc("repairRecords", existing.id, data);
+          else await createDoc("repairRecords", data);
+          toast("Repair details saved", "good"); onChange();
+        } catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+async function openMaintenanceRecordModal(log, openBreak, onChange, presetMilestone) {
+  const existing = presetMilestone ? null : await findRecordForBreak("maintenanceRecords", openBreak?.id);
+  openModal({
+    title: presetMilestone ? `${presetMilestone}-hour service` : "Maintenance details", wide: true,
+    bodyHTML: `
+      <div class="formrow">
+        <div class="field"><label>Maintenance type</label><select id="mtType">${MAINTENANCE_TYPES.map(t => `<option ${t === existing?.maintenanceType ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>
+        <div class="field"><label>Performed by</label><input type="text" id="mtBy" value="${esc(existing?.performedBy || state.profile?.name || "")}"></div>
+      </div>
+      <div class="field"><label>Description *</label><textarea id="mtDesc" rows="2">${esc(existing?.description || "")}</textarea></div>
+      <div class="field"><label>Reason</label><input type="text" id="mtReason" value="${esc(existing?.reason || "")}"></div>
+      <div class="field"><label>Notes</label><textarea id="mtNotes" rows="2">${esc(existing?.notes || "")}</textarea></div>
+      <div class="err hidden" id="mtErr">Description is required.</div>`,
+    footHTML: `<button class="btn" id="mtCancel">Cancel</button><button class="btn primary" id="mtOk">Save Maintenance</button>`,
+    onMount: () => {
+      $("#mtCancel").onclick = closeModal;
+      $("#mtOk").onclick = async () => {
+        const desc = $("#mtDesc").value.trim();
+        if (!desc) { $("#mtErr").classList.remove("hidden"); return; }
+        const data = {
+          dailyLogId: log.id, machineId: log.machineId, projectId: log.projectId, breakId: openBreak?.id || null,
+          maintenanceMilestone: presetMilestone || null, maintenanceType: $("#mtType").value,
+          startedAt: openBreak?.startTime || Timestamp.fromDate(new Date()), endedAt: openBreak?.endTime || null,
+          performedBy: $("#mtBy").value.trim(), description: desc, reason: $("#mtReason").value.trim(),
+          status: presetMilestone ? "In Progress" : "Completed", notes: $("#mtNotes").value.trim(),
+        };
+        closeModal();
+        try {
+          let id = existing?.id;
+          if (existing) await patchDoc("maintenanceRecords", existing.id, data);
+          else id = await createDoc("maintenanceRecords", data);
+          toast("Maintenance details saved", "good"); if (onChange) onChange(id);
+        } catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+function openPartModal(log, onChange, defaults) {
+  const render = (usageType) => `
+    <div class="field"><label>Usage type *</label>
+      <select id="pkUsage">${USAGE_TYPES.map(t => `<option ${t === usageType ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+    </div>
+    <div class="formrow">
+      <div class="field"><label>Item / component name *</label><input type="text" id="pkName" value="${esc(defaults?.itemName || "")}"></div>
+      <div class="field"><label>Part number</label><input type="text" id="pkPartNo"></div>
+    </div>
+    <div class="formrow">
+      <div class="field"><label>Quantity *</label><input type="number" id="pkQty" min="0" step="0.01" value="1"></div>
+      <div class="field"><label>Unit</label><input type="text" id="pkUnit" placeholder="pcs, L, kg…"></div>
+    </div>
+    <div id="pkConditional"></div>
+    <div class="field"><label>Notes</label><textarea id="pkNotes" rows="2"></textarea></div>
+    <div class="err hidden" id="pkErr"></div>`;
+  const conditionalHTML = (usageType) => {
+    if (usageType === "Purchased") return `
+      <div class="field"><label>Reason for purchase *</label><input type="text" id="pkReason"></div>
+      <div class="formrow">
+        <div class="field"><label>Unit price (${CURRENCY}) *</label><input type="number" id="pkPrice" min="0" step="0.01"></div>
+        <div class="field"><label>Total price</label><input type="text" id="pkTotal" disabled></div>
+      </div>
+      <div class="field"><label>Supplier</label><input type="text" id="pkSupplier"></div>`;
+    if (usageType === "Replaced") return `
+      <div class="formrow">
+        <div class="field"><label>Old item / component</label><input type="text" id="pkOld"></div>
+        <div class="field"><label>New item / component</label><input type="text" id="pkNew"></div>
+      </div>
+      <div class="field"><label>Reason for replacement *</label><select id="pkReason">${REPLACEMENT_REASONS.map(r => `<option>${esc(r)}</option>`).join("")}</select></div>
+      <div class="check" style="margin-bottom:10px"><input type="checkbox" id="pkWasPurchased"><label for="pkWasPurchased">This replacement was purchased (has a cost)</label></div>
+      <div class="formrow hidden" id="pkCostRow">
+        <div class="field"><label>Unit price (${CURRENCY})</label><input type="number" id="pkPrice" min="0" step="0.01"></div>
+        <div class="field"><label>Total price</label><input type="text" id="pkTotal" disabled></div>
+      </div>`;
+    if (usageType === "Reused") return `
+      <div class="field"><label>Reason it was reused *</label><input type="text" id="pkReason"></div>
+      <div class="formrow">
+        <div class="field"><label>Condition</label><input type="text" id="pkCondition"></div>
+        <div class="field"><label>Action performed</label><input type="text" id="pkAction"></div>
+      </div>`;
+    if (usageType === "Maintained") return `
+      <div class="field"><label>Maintenance action *</label><input type="text" id="pkAction" placeholder="Cleaned, adjusted, lubricated…"></div>
+      <div class="formrow">
+        <div class="field"><label>Reason</label><input type="text" id="pkReason"></div>
+        <div class="field"><label>Condition</label><input type="text" id="pkCondition"></div>
+      </div>`;
+    return "";
+  };
+  openModal({
+    title: "Add Item", wide: true,
+    bodyHTML: render("Purchased"),
+    footHTML: `<button class="btn" id="pkCancel">Cancel</button><button class="btn primary" id="pkOk">Save Item</button>`,
+    onMount: () => {
+      const refreshConditional = () => {
+        $("#pkConditional").innerHTML = conditionalHTML($("#pkUsage").value);
+        wireCostToggle();
+      };
+      const wireCostToggle = () => {
+        const chk = $("#pkWasPurchased");
+        if (chk) chk.onchange = () => $("#pkCostRow").classList.toggle("hidden", !chk.checked);
+        const qty = $("#pkQty"), price = $("#pkPrice"), total = $("#pkTotal");
+        const recalc = () => { if (total) total.value = fmtMoney(calculateTotalItemCost(qty.value, price?.value || 0)); };
+        if (price) price.addEventListener("input", recalc);
+        qty.addEventListener("input", recalc);
+        recalc();
+      };
+      $("#pkUsage").onchange = refreshConditional;
+      refreshConditional();
+      $("#pkCancel").onclick = closeModal;
+      $("#pkOk").onclick = async () => {
+        const usageType = $("#pkUsage").value;
+        const itemName = $("#pkName").value.trim();
+        const qty = Number($("#pkQty").value) || 0;
+        const err = $("#pkErr"); err.classList.add("hidden"); err.textContent = "";
+        if (!itemName) { err.textContent = "Item name is required."; err.classList.remove("hidden"); return; }
+        const reasonEl = $("#pkReason");
+        if (usageType === "Purchased") {
+          const price = Number($("#pkPrice")?.value);
+          if (!reasonEl?.value.trim()) { err.textContent = "Reason for purchase is required."; err.classList.remove("hidden"); return; }
+          if (!(price > 0)) { err.textContent = "Purchased items must have a unit price."; err.classList.remove("hidden"); return; }
+        }
+        if (usageType === "Replaced" && !reasonEl?.value.trim()) { err.textContent = "Reason for replacement is required."; err.classList.remove("hidden"); return; }
+        const wasPurchased = $("#pkWasPurchased")?.checked;
+        const unitPrice = Number($("#pkPrice")?.value) || 0;
+        const data = {
+          dailyLogId: log.id, machineId: log.machineId, projectId: log.projectId,
+          itemName, partNumber: $("#pkPartNo")?.value.trim() || "", quantity: qty, unit: $("#pkUnit")?.value.trim() || "",
+          usageType, reason: reasonEl?.value.trim() || "",
+          condition: $("#pkCondition")?.value.trim() || "", actionPerformed: $("#pkAction")?.value.trim() || "",
+          oldItem: $("#pkOld")?.value.trim() || "", newItem: $("#pkNew")?.value.trim() || "",
+          supplier: $("#pkSupplier")?.value.trim() || "",
+          unitPrice: (usageType === "Purchased" || wasPurchased) ? unitPrice : 0,
+          totalPrice: (usageType === "Purchased" || wasPurchased) ? calculateTotalItemCost(qty, unitPrice) : 0,
+          currency: CURRENCY, purchaseDate: (usageType === "Purchased" || wasPurchased) ? todayISODate() : null,
+          notes: $("#pkNotes").value.trim(),
+        };
+        closeModal();
+        try { await createDoc("parts", data); await writeAudit("Part added", "parts", null, null, { itemName, usageType }); toast("Item saved", "good"); onChange(); }
+        catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+/* ===== 10-today-machine-views.js ===== */
+
+/* ---------------------------------------------------------- [V:TODAY] --- */
+route("today", async (params, el) => {
+  if (state.role !== ROLES.SITE_MANAGER) { el.innerHTML = emptyState("Not available", "This screen is for site managers."); return; }
+  await renderTodayLog(el);
+});
+async function renderTodayLog(el) {
+  const { project, machine } = getManagerContext();
+  if (!project || !machine) { el.innerHTML = pageHead("Today's Log", "") + emptyState("No project assigned yet"); return; }
+  const log = await ensureTodayLog(project, machine, state.user.uid);
+  const { sessions, breaks, repairs, maintenance, parts } = await fetchLogChildren(log.id);
+  const st = getTodayLogState(log, sessions, breaks);
+  const events = [...sessions.map(s => ({ ...s, _type: "session" })), ...breaks.map(b => ({ ...b, _type: "break" }))].sort((a, b) => toDate(a.startTime) - toDate(b.startTime));
+
+  el.innerHTML = `
+    ${pageHead("Today's Log", `${esc(project.name || "Project")} · ${esc(machine.machineId || machine.model || "Machine")} · ${fmtDate(log.date + "T00:00:00")}`,
+      `<span>${statusBadgeForLog(log.status)}</span>`)}
+    ${log.status === "rejected" && log.rejectionReason ? `<div class="alert bad" style="margin-bottom:14px"><span class="ic">!</span><div class="txt"><b>Rejected</b><span>${esc(log.rejectionReason)}</span></div></div>` : ""}
+    <div class="grid cols-2">
+      <div class="card">
+        <div class="card-title">Actions</div>
+        <div id="actionGrid"></div>
+        <div class="divider"></div>
+        <div class="card-title">Notes</div>
+        <textarea id="logNotes" rows="2" ${log.status !== "draft" && log.status !== "rejected" ? "disabled" : ""}>${esc(log.notes || "")}</textarea>
+        <button class="btn sm" id="saveNotes" style="margin-top:8px" ${log.status !== "draft" && log.status !== "rejected" ? "disabled" : ""}>Save note</button>
+      </div>
+      <div class="card">
+        <div class="card-title">Session timeline</div>
+        ${events.length ? `<div class="timeline">${events.map(ev => renderTimelineItem(ev)).join("")}</div>` : emptyState("Nothing recorded yet", "Tap Start Work to begin the day.")}
+        <div class="divider"></div>
+        <div class="kv">
+          <div class="row"><span class="k">Working hours</span><span class="v num">${fmtHours(log.totalWorkingHours)}</span></div>
+          <div class="row"><span class="k">Downtime</span><span class="v num">${fmtHours(log.totalDowntimeHours)}</span></div>
+          <div class="row"><span class="k">Repair hours</span><span class="v num">${fmtHours(log.totalRepairHours)}</span></div>
+          <div class="row"><span class="k">Rental amount</span><span class="v num">${fmtMoney(log.rentalAmount)}</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="grid cols-3" style="margin-top:14px">
+      <div class="card"><div class="card-title">Repairs (${repairs.length})</div>${repairs.length ? `<div class="list">${repairs.map(r => `<div class="rowcard" style="cursor:default"><div class="rc-main"><div class="rc-title">${esc(r.problemDescription || "Repair")}</div><div class="rc-sub">${esc(r.machineStatus || "")}</div></div></div>`).join("")}</div>` : emptyState("No repairs logged")}</div>
+      <div class="card"><div class="card-title">Maintenance (${maintenance.length})</div>${maintenance.length ? `<div class="list">${maintenance.map(m => `<div class="rowcard" style="cursor:default"><div class="rc-main"><div class="rc-title">${esc(m.description || m.maintenanceType || "Maintenance")}</div><div class="rc-sub">${esc(m.maintenanceType || "")}</div></div></div>`).join("")}</div>` : emptyState("No maintenance logged")}</div>
+      <div class="card"><div class="card-title">Items used (${parts.length})</div>${parts.length ? `<div class="list">${parts.map(p => `<div class="rowcard" style="cursor:default"><div class="rc-main"><div class="rc-title">${esc(p.itemName)}</div><div class="rc-sub">${esc(p.quantity)} ${esc(p.unit || "")}</div></div><div class="rc-end">${badge(usageBadgeKind(p.usageType), p.usageType)}</div></div>`).join("")}</div>` : emptyState("No items recorded")}</div>
+    </div>`;
+  renderManagerActionGrid($("#actionGrid"), log, sessions, breaks, st, () => renderTodayLog(el));
+  const saveBtn = $("#saveNotes");
+  if (saveBtn) saveBtn.onclick = async () => { try { await patchDoc("dailyLogs", log.id, { notes: $("#logNotes").value }); toast("Note saved", "good"); } catch (e) { toast(errorMessage(e), "bad"); } };
+}
+function usageBadgeKind(t) { return { Replaced: "warn", Reused: "info", Maintained: "neutral", Purchased: "good" }[t] || "neutral"; }
+function renderTimelineItem(ev) {
+  if (ev._type === "session") {
+    return `<div class="tl-item"><div class="tl-marker"></div><div class="tl-body">
+      <div class="tl-time">${fmtTime(ev.startTime)} → ${ev.endTime ? fmtTime(ev.endTime) : "in progress"}</div>
+      <div class="tl-reason">Working${ev.stopReason ? ` · stopped for ${esc(ev.stopReason)}` : ""}</div>
+      ${ev.endTime ? `<div class="tl-dur">${fmtHoursMin(calculateSessionDuration(ev))}</div>` : ""}
+    </div></div>`;
+  }
+  return `<div class="tl-item"><div class="tl-marker stop"></div><div class="tl-body">
+    <div class="tl-time">${fmtTime(ev.startTime)} → ${ev.endTime ? fmtTime(ev.endTime) : "ongoing"}</div>
+    <div class="tl-reason">${esc(ev.reason)}</div>
+    ${ev.endTime ? `<div class="tl-dur">${fmtHoursMin(calculateBreakDuration(ev))}</div>` : ""}
+  </div></div>`;
+}
+
+/* -------------------------------------------------------- [V:MACHINE] --- */
+route("machine", async (params, el) => {
+  const { project, machine } = getManagerContext();
+  if (!machine) { el.innerHTML = pageHead("Machine", "") + emptyState("No machine assigned yet"); return; }
+  const [maintRecs, latestTelemetry] = await Promise.all([
+    fetchMaintenanceRecordsFor(machine.id),
+    getLatestTelemetry(machine.id),
+  ]);
+  const lifetimeHours = Number(machine.lifetimeHours ?? machine.initialHourMeter) || 0;
+  const milestones = getAllMilestoneStatuses(lifetimeHours, maintRecs, machine.id);
+  el.innerHTML = `
+    ${pageHead(machine.machineId || machine.model || "Machine", `${esc(machine.manufacturer || "Doosan")} ${esc(machine.model || "DX360")}`)}
+    <div class="grid cols-2" style="margin-bottom:14px">
+      <div class="gauge"><div class="label">Approved hour meter</div><div class="value num">${lifetimeHours.toLocaleString("en-US", { minimumFractionDigits: 1 })}<span class="unit">h</span></div>
+        ${latestTelemetry ? `<div class="meta">Telemetry: <b class="num">${fmtHours(latestTelemetry.currentHours)}</b> · ${esc(latestTelemetry.source || "Manual")} · diff ${fmtHours(Math.abs(lifetimeHours - Number(latestTelemetry.currentHours || 0)))}</div>` : `<div class="meta">No telemetry reading recorded yet.</div>`}</div>
+      <div class="card"><div class="card-title">Details</div><div class="kv">
+        <div class="row"><span class="k">Serial number</span><span class="v">${esc(machine.serialNumber || "—")}</span></div>
+        <div class="row"><span class="k">Asset number</span><span class="v">${esc(machine.assetNumber || "—")}</span></div>
+        <div class="row"><span class="k">Project</span><span class="v">${esc(project?.name || "—")}</span></div>
+        <div class="row"><span class="k">Status</span><span class="v">${esc(machine.status || "Active")}</span></div>
+      </div></div>
+    </div>
+    <div class="card"><div class="card-title">Maintenance milestones</div>${renderMilestoneList(milestones, machine.id)}</div>`;
+});
+function renderMilestoneList(milestones, machineId) {
+  return `<div class="list">${milestones.map(m => `
+    <a class="rowcard" href="#/maintenance/${machineId}/${m.tierHours}">
+      <div class="rc-main"><div class="rc-title">${m.tierHours}-hour service</div><div class="rc-sub">${m.label}</div></div>
+      <div class="rc-end">${priorityBadge(m.priority, m.state === "overdue" ? "Overdue" : m.state === "due" ? "Due" : "Upcoming")}</div>
+    </a>`).join("")}</div>`;
+}
+async function getLatestTelemetry(machineId) {
+  const snap = await getDocs(query(col("telemetryReadings"), where("machineId", "==", machineId)));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  rows.sort((a, b) => toDate(b.readingTimestamp || b.createdAt) - toDate(a.readingTimestamp || a.createdAt));
+  return rows[0] || null;
+}
+
+/* ===== 11-maintenance-view.js ===== */
+
+/* ------------------------------------------------------- [V:MAINT] --- */
+route("maintenance", async (params, el) => {
+  let machine, project;
+  if (state.role === ROLES.ADMIN) {
+    machine = state.machines.find(m => m.id === state.dashMachineId) || state.machines[0];
+  } else {
+    ({ project, machine } = getManagerContext());
+  }
+  if (!machine) { el.innerHTML = pageHead("Maintenance", "") + emptyState("No machine available yet"); return; }
+  const maintRecs = await fetchMaintenanceRecordsFor(machine.id);
+  const lifetimeHours = Number(machine.lifetimeHours ?? machine.initialHourMeter) || 0;
+  const milestones = getAllMilestoneStatuses(lifetimeHours, maintRecs, machine.id);
+  const history = maintRecs.filter(r => r.status === "Completed").sort((a, b) => (b.machineHoursAtService || 0) - (a.machineHoursAtService || 0));
+  el.innerHTML = `
+    ${pageHead("Maintenance", `${esc(machine.machineId || machine.model)} · ${fmtHours(lifetimeHours)} lifetime`,
+      state.role === ROLES.ADMIN ? `<a class="btn sm" href="#/settings">Configure schedules</a>` : "")}
+    <div class="card" style="margin-bottom:14px"><div class="card-title">Milestones</div>${renderMilestoneList(milestones, machine.id)}</div>
+    <div class="card"><div class="card-title">Service history</div>
+      ${history.length ? `<table class="dt"><thead><tr><th>Milestone</th><th>Hours at service</th><th>Date</th><th>Performed by</th><th>Cost</th></tr></thead><tbody>
+        ${history.map(r => `<tr>
+          <td data-label="Milestone">${r.maintenanceMilestone ? r.maintenanceMilestone + "h" : "Ad hoc"}</td>
+          <td data-label="Hours" class="num">${fmtHours(r.machineHoursAtService)}</td>
+          <td data-label="Date">${fmtDate(r.endedAt || r.createdAt)}</td>
+          <td data-label="By">${esc(r.performedBy || "—")}</td>
+          <td data-label="Cost" class="num">${fmtMoney(r.cost || 0)}</td>
+        </tr>`).join("")}</tbody></table>` : emptyState("No completed services yet")}
+    </div>`;
+});
+
+route("maintenance/:machineId/:tier", async (params, el) => {
+  const machine = state.machines.find(m => m.id === params.machineId);
+  const tier = Number(params.tier);
+  if (!machine) { el.innerHTML = emptyState("Machine not found"); return; }
+  const maintRecs = await fetchMaintenanceRecordsFor(machine.id);
+  const lifetimeHours = Number(machine.lifetimeHours ?? machine.initialHourMeter) || 0;
+  const status = getMilestoneStatus(tier, lifetimeHours, maintRecs.filter(r => Number(r.maintenanceMilestone) === tier && r.status === "Completed"));
+  let openRecord = maintRecs.find(r => Number(r.maintenanceMilestone) === tier && r.status === "In Progress");
+  const tasks = getCascadedTasks(state.maintenanceSchedules, tier);
+  const taskState = openRecord?.taskStatuses || {};
+
+  const groups = {};
+  tasks.forEach(t => { (groups[t.sourceMilestone] = groups[t.sourceMilestone] || []).push(t); });
+
+  el.innerHTML = `
+    ${pageHead(`${tier}-Hour Service`, `${esc(machine.machineId || machine.model)} · current ${fmtHours(lifetimeHours)}`, `<a class="btn sm ghost" href="#/maintenance">← Back</a>`)}
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div>${priorityBadge(status.priority, status.state === "overdue" ? "OVERDUE" : status.state === "due" ? "DUE" : "UPCOMING")} <span class="faint">${status.label}</span></div>
+        ${!openRecord ? `<button class="btn primary sm" id="startService">Start Service</button>` : `<span class="badge info">In progress since ${fmtDateTime(openRecord.startedAt || openRecord.createdAt)}</span>`}
+      </div>
+      ${tier === 5000 ? `<div class="alert info" style="margin-top:12px"><span class="ic">i</span><div class="txt"><b>Custom major-service milestone</b><span>5,000-hour tasks are Admin-configured, not an official Doosan interval.</span></div></div>` : ""}
+    </div>
+    ${!tasks.length ? `<div class="card">${emptyState("No checklist configured for this milestone yet", state.role === ROLES.ADMIN ? "Add tasks from Settings → Maintenance Schedules." : "Ask your administrator to configure this checklist.")}</div>` : ""}
+    ${openRecord ? `
+      <div id="checklistForm">
+        ${Object.keys(groups).sort((a, b) => a - b).map(src => `
+          <div class="ck-group-title">${src == tier ? `${tier}h tasks` : `Inherited from ${src}h`} ${badge(src == tier ? "neutral" : "info", src == tier ? "This service" : "Cascaded")}</div>
+          <div class="checklist">
+            ${groups[src].map(t => renderChecklistItem(t, taskState[t.taskId] || { status: "Pending" })).join("")}
+          </div>`).join("")}
+        <div class="card" style="margin-top:16px">
+          <div class="card-title">Complete service</div>
+          <div class="formrow">
+            <div class="field"><label>Duration (hours)</label><input type="number" id="svcDuration" step="0.1" min="0"></div>
+            <div class="field"><label>Cost (${CURRENCY})</label><input type="number" id="svcCost" step="0.01" min="0"></div>
+          </div>
+          <div class="field"><label>Approved by</label><input type="text" id="svcApprover" value="${esc(state.role === ROLES.ADMIN ? (state.profile?.name || "") : "")}" placeholder="Admin name"></div>
+          <button type="button" class="btn good block lg" id="completeService">Mark Service Completed</button>
+        </div>
+      </div>` : ""}`;
+
+  if ($("#startService")) $("#startService").onclick = async () => {
+    try {
+      const id = await createDoc("maintenanceRecords", { machineId: machine.id, maintenanceMilestone: tier, maintenanceType: "Preventive", status: "In Progress", startedAt: nowTS(), taskStatuses: {}, description: `${tier}-hour service` });
+      toast("Service started", "good"); location.hash = `#/maintenance/${machine.id}/${tier}`; renderRoute();
+    } catch (e) { toast(errorMessage(e), "bad"); }
+  };
+  $$("[data-task]").forEach(wireTaskButtons);
+  if ($("#completeService")) $("#completeService").onclick = () => completeService(machine, tier, openRecord, lifetimeHours);
+});
+
+function renderChecklistItem(task, ts) {
+  const cls = ts.status === "Completed" ? "done" : ts.status === "Skipped" ? "skipped" : "";
+  return `<div class="ck-item ${cls}" data-task="${task.taskId}">
+    <div class="ck-main">
+      <div class="ck-name">${esc(task.name)} ${task.inherited ? `<span class="faint">(${task.sourceMilestone}h)</span>` : ""}</div>
+      <div class="ck-action">${esc(task.action || "")}${task.quantity ? ` · ${esc(task.quantity)} ${esc(task.unit || "")}` : ""}</div>
+      ${ts.status === "Skipped" && ts.skipReason ? `<div class="faint">Skipped: ${esc(ts.skipReason)}</div>` : ""}
+    </div>
+    <div class="ck-status">
+      ${TASK_STATUSES.map(s => `<button type="button" class="${ts.status === s ? "on" : ""}" data-set="${esc(s)}">${esc(s === "Not Applicable" ? "N/A" : s)}</button>`).join("")}
+    </div>
+  </div>`;
+}
+function wireTaskButtons(itemEl) {
+  const taskId = itemEl.dataset.task;
+  $$("[data-set]", itemEl).forEach(btn => {
+    btn.onclick = async () => {
+      const newStatus = btn.dataset.set;
+      if (newStatus === "Skipped") {
+        const reason = await promptReasonDialog({ title: "Skip reason", message: "A reason is required to skip this task.", label: "Reason" });
+        if (!reason) return;
+        await updateTaskStatus(taskId, newStatus, reason);
+      } else {
+        await updateTaskStatus(taskId, newStatus, null);
+      }
+    };
+  });
+}
+async function updateTaskStatus(taskId, status, skipReason) {
+  try {
+    const hash = location.hash.replace(/^#\/?/, "").split("/");
+    const machineId = hash[1], tier = Number(hash[2]);
+    const maintRecs = await fetchMaintenanceRecordsFor(machineId);
+    const openRecord = maintRecs.find(r => Number(r.maintenanceMilestone) === tier && r.status === "In Progress");
+    if (!openRecord) return;
+    const taskStatuses = { ...(openRecord.taskStatuses || {}), [taskId]: { status, skipReason: skipReason || null } };
+    await patchDoc("maintenanceRecords", openRecord.id, { taskStatuses });
+    renderRoute();
+  } catch (e) { toast(errorMessage(e), "bad"); }
+}
+async function completeService(machine, tier, openRecord, currentLifetimeHours) {
+  const tasks = getCascadedTasks(state.maintenanceSchedules, tier);
+  const taskStatuses = openRecord.taskStatuses || {};
+  const requiredTasks = tasks.filter(t => t.required !== false);
+  const missing = requiredTasks.filter(t => !taskStatuses[t.taskId] || taskStatuses[t.taskId].status === "Pending" || taskStatuses[t.taskId].status === "In Progress");
+  if (missing.length) { toast(`${missing.length} required task(s) still need a status`, "bad"); return; }
+  const skippedNoReason = tasks.filter(t => taskStatuses[t.taskId]?.status === "Skipped" && !taskStatuses[t.taskId]?.skipReason);
+  if (skippedNoReason.length) { toast("Every skipped task needs a skip reason", "bad"); return; }
+  const tasksCompleted = tasks.filter(t => taskStatuses[t.taskId]?.status === "Completed").map(t => t.taskId);
+  const tasksSkipped = tasks.filter(t => taskStatuses[t.taskId]?.status === "Skipped").map(t => t.taskId);
+  try {
+    await patchDoc("maintenanceRecords", openRecord.id, {
+      status: "Completed", endedAt: nowTS(), machineHoursAtService: currentLifetimeHours,
+      tasksCompleted, tasksSkipped, duration: Number($("#svcDuration").value) || 0,
+      cost: Number($("#svcCost").value) || 0, approvedBy: $("#svcApprover").value.trim() || null,
+    });
+    await writeAudit("Maintenance completed", "maintenanceRecords", openRecord.id, { status: "In Progress" }, { status: "Completed", tier });
+    toast(`${tier}-hour service marked complete`, "good");
+    location.hash = "#/maintenance"; renderRoute();
+  } catch (e) { toast(errorMessage(e), "bad"); }
+}
+
+/* ===== 12-repairs-parts-views.js ===== */
+
+/* ------------------------------------------------------ [V:REPAIRS] --- */
+route("repairs", async (params, el) => {
+  const machineIds = state.role === ROLES.ADMIN ? state.machines.map(m => m.id) : [getManagerContext().machine?.id].filter(Boolean);
+  if (!machineIds.length) { el.innerHTML = pageHead("Repairs", "") + emptyState("No machine available yet"); return; }
+  const all = (await Promise.all(machineIds.map(async id => {
+    const snap = await getDocs(query(col("repairRecords"), where("machineId", "==", id)));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }))).flat().sort((a, b) => toDate(b.repairStart || b.createdAt) - toDate(a.repairStart || a.createdAt));
+
+  const breakdowns = all.filter(r => r.machineStatus === "Major breakdown" || r.problemDescription?.toLowerCase().includes("breakdown"));
+  const totalHours = round1(all.reduce((s, r) => s + (r.repairStart && r.repairEnd ? hoursBetween(r.repairStart, r.repairEnd) : 0), 0));
+
+  el.innerHTML = `
+    ${pageHead("Repairs", `${all.length} record${all.length === 1 ? "" : "s"} · ${fmtHours(totalHours)} total repair time`)}
+    <div class="grid cols-3" style="margin-bottom:14px">
+      <div class="stat"><div class="label">Total repairs</div><div class="value num">${all.length}</div></div>
+      <div class="stat"><div class="label">Breakdowns</div><div class="value num">${breakdowns.length}</div></div>
+      <div class="stat"><div class="label">Total repair hours</div><div class="value num">${fmtHours(totalHours)}</div></div>
+    </div>
+    <div class="card pad-0">
+      ${all.length ? `<table class="dt"><thead><tr><th>Date</th><th>Problem</th><th>Status</th><th>Technician</th><th>Duration</th></tr></thead><tbody>
+        ${all.map(r => `<tr class="repairRow" data-id="${r.id}" style="cursor:pointer">
+          <td data-label="Date">${fmtDate(r.repairStart || r.createdAt)}</td>
+          <td data-label="Problem">${esc(r.problemDescription || "—")}</td>
+          <td data-label="Status">${badge(r.machineStatus === "Major breakdown" ? "bad" : r.machineStatus === "Operational" || r.machineStatus === "Returned to operation" ? "good" : "warn", r.machineStatus || "—")}</td>
+          <td data-label="Technician">${esc(r.technician || "—")}</td>
+          <td data-label="Duration" class="num">${r.repairEnd ? fmtHoursMin(hoursBetween(r.repairStart, r.repairEnd)) : "ongoing"}</td>
+        </tr>`).join("")}</tbody></table>` : emptyState("No repairs logged")}
+    </div>`;
+  $$(".repairRow").forEach(row => row.onclick = () => {
+    const r = all.find(x => x.id === row.dataset.id);
+    openModal({ title: "Repair record", wide: true, bodyHTML: `<div class="kv">
+      <div class="row"><span class="k">Started</span><span class="v">${fmtDateTime(r.repairStart)}</span></div>
+      <div class="row"><span class="k">Ended</span><span class="v">${r.repairEnd ? fmtDateTime(r.repairEnd) : "Ongoing"}</span></div>
+      <div class="row"><span class="k">Machine status</span><span class="v">${esc(r.machineStatus || "—")}</span></div>
+      <div class="row"><span class="k">Problem</span><span class="v">${esc(r.problemDescription || "—")}</span></div>
+      <div class="row"><span class="k">Cause</span><span class="v">${esc(r.cause || "—")}</span></div>
+      <div class="row"><span class="k">Action taken</span><span class="v">${esc(r.actionTaken || "—")}</span></div>
+      <div class="row"><span class="k">Technician</span><span class="v">${esc(r.technician || "—")}</span></div>
+      <div class="row"><span class="k">Notes</span><span class="v">${esc(r.notes || "—")}</span></div>
+    </div>`, footHTML: `<button class="btn primary" id="rClose">Close</button>`, onMount: () => $("#rClose").onclick = closeModal });
+  });
+});
+
+/* -------------------------------------------------------- [V:PARTS] --- */
+route("parts", async (params, el) => {
+  const machineIds = state.role === ROLES.ADMIN ? state.machines.map(m => m.id) : [getManagerContext().machine?.id].filter(Boolean);
+  if (!machineIds.length) { el.innerHTML = pageHead("Parts & Expenses", "") + emptyState("No machine available yet"); return; }
+  const allParts = (await Promise.all(machineIds.map(async id => {
+    const snap = await getDocs(query(col("parts"), where("machineId", "==", id)));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }))).flat().sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  const totalCost = round2(allParts.reduce((s, p) => s + (Number(p.totalPrice) || 0), 0));
+
+  el.innerHTML = `
+    ${pageHead("Parts & Expenses", `${allParts.length} item${allParts.length === 1 ? "" : "s"} · ${fmtMoney(totalCost)} total cost`)}
+    <div class="tabs"><div class="tab active" data-tab="parts">Parts</div><div class="tab" data-tab="expenses">Expenses</div></div>
+    <div id="tabBody"></div>`;
+  const body = $("#tabBody");
+  const drawParts = () => {
+    body.innerHTML = allParts.length ? `<div class="card pad-0"><table class="dt"><thead><tr><th>Item</th><th>Usage</th><th>Qty</th><th>Cost</th><th>Date</th></tr></thead><tbody>
+      ${allParts.map(p => `<tr class="partRow" data-id="${p.id}" style="cursor:pointer">
+        <td data-label="Item">${esc(p.itemName)}</td>
+        <td data-label="Usage">${badge(usageBadgeKind(p.usageType), p.usageType)}</td>
+        <td data-label="Qty">${esc(p.quantity)} ${esc(p.unit || "")}</td>
+        <td data-label="Cost" class="num">${p.totalPrice ? fmtMoney(p.totalPrice) : "—"}</td>
+        <td data-label="Date">${fmtDate(p.createdAt)}</td>
+      </tr>`).join("")}</tbody></table></div>` : emptyState("No items recorded yet");
+    $$(".partRow", body).forEach(row => row.onclick = () => openItemHistory(allParts, allParts.find(p => p.id === row.dataset.id)));
+  };
+  const drawExpenses = async () => {
+    body.innerHTML = `<div class="empty">Loading…</div>`;
+    const projectIds = state.role === ROLES.ADMIN ? state.projects.map(p => p.id) : [getManagerContext().project?.id].filter(Boolean);
+    const exp = (await Promise.all(projectIds.map(async id => {
+      const snap = await getDocs(query(col("expenses"), where("projectId", "==", id)));
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }))).flat().sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+    body.innerHTML = `${state.role === ROLES.ADMIN ? `<div class="page-actions" style="margin-bottom:10px"><button class="btn sm primary" id="addExpense">Add Expense</button></div>` : ""}
+      <div class="card pad-0">${exp.length ? `<table class="dt"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead><tbody>
+      ${exp.map(e => `<tr><td data-label="Date">${fmtDate(e.createdAt)}</td><td data-label="Description">${esc(e.description || "—")}</td><td data-label="Category">${esc(e.category || "—")}</td><td data-label="Amount" class="num">${fmtMoney(e.amount)}</td></tr>`).join("")}</tbody></table>` : emptyState("No expenses recorded yet")}</div>`;
+    if ($("#addExpense")) $("#addExpense").onclick = () => openExpenseModal(() => drawExpenses());
+  };
+  drawParts();
+  $$(".tab").forEach(t => t.onclick = () => { $$(".tab").forEach(x => x.classList.remove("active")); t.classList.add("active"); t.dataset.tab === "parts" ? drawParts() : drawExpenses(); });
+});
+function openItemHistory(all, item) {
+  const hist = all.filter(p => p.itemName === item.itemName).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  openModal({ title: `Item: ${item.itemName}`, wide: true, bodyHTML: `<div class="list">${hist.map(h => `
+    <div class="rowcard" style="cursor:default"><div class="rc-main"><div class="rc-title">${fmtDate(h.createdAt)} — ${esc(h.usageType)}</div><div class="rc-sub">${esc(h.reason || h.actionPerformed || "")}</div></div><div class="rc-end">${h.totalPrice ? fmtMoney(h.totalPrice) : ""}</div></div>`).join("")}</div>`,
+    footHTML: `<button class="btn primary" id="ihClose">Close</button>`, onMount: () => $("#ihClose").onclick = closeModal });
+}
+function openExpenseModal(onDone) {
+  openModal({
+    title: "Add Expense",
+    bodyHTML: `
+      <div class="field"><label>Project</label><select id="exProject">${state.projects.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Description *</label><input type="text" id="exDesc"></div>
+      <div class="formrow">
+        <div class="field"><label>Category</label><input type="text" id="exCat" placeholder="Fuel, transport…"></div>
+        <div class="field"><label>Amount (${CURRENCY}) *</label><input type="number" id="exAmt" min="0" step="0.01"></div>
+      </div>`,
+    footHTML: `<button class="btn" id="exCancel">Cancel</button><button class="btn primary" id="exOk">Save</button>`,
+    onMount: () => {
+      $("#exCancel").onclick = closeModal;
+      $("#exOk").onclick = async () => {
+        const desc = $("#exDesc").value.trim(), amt = Number($("#exAmt").value);
+        if (!desc || !(amt > 0)) { toast("Description and a positive amount are required", "bad"); return; }
+        closeModal();
+        try { await createDoc("expenses", { projectId: $("#exProject").value, description: desc, category: $("#exCat").value.trim(), amount: amt, currency: CURRENCY }); toast("Expense saved", "good"); onDone(); }
+        catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+/* ===== 13-logs-approval-history.js ===== */
+
+/* --------------------------------------------------------- [V:LOGS] --- */
+route("logs", async (params, el) => {
+  const snap = await getDocs(query(col("dailyLogs"), orderBy("date", "desc"), qlimit(100)));
+  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const filterSel = `<select id="logStatusFilter" class="btn sm"><option value="">All statuses</option>${["submitted", "approved", "rejected", "draft"].map(s => `<option value="${s}">${s[0].toUpperCase() + s.slice(1)}</option>`).join("")}</select>`;
+  el.innerHTML = `${pageHead("Daily Logs", `${logs.length} recent report${logs.length === 1 ? "" : "s"}`, filterSel)}<div class="card pad-0" id="logsTable"></div>`;
+  const draw = () => {
+    const f = $("#logStatusFilter").value;
+    const rows = f ? logs.filter(l => l.status === f) : logs;
+    $("#logsTable").innerHTML = rows.length ? `<table class="dt"><thead><tr><th>Date</th><th>Machine</th><th>Working</th><th>Rental</th><th>Status</th></tr></thead><tbody>
+      ${rows.map(l => {
+        const m = state.machines.find(x => x.id === l.machineId);
+        return `<tr class="logRow" data-id="${l.id}" style="cursor:pointer">
+          <td data-label="Date">${fmtDate(l.date)}</td>
+          <td data-label="Machine">${esc(m?.machineId || m?.model || "—")}</td>
+          <td data-label="Working" class="num">${fmtHours(l.totalWorkingHours)}</td>
+          <td data-label="Rental" class="num">${fmtMoney(l.rentalAmount)}</td>
+          <td data-label="Status">${statusBadgeForLog(l.status)}</td>
+        </tr>`;
+      }).join("")}</tbody></table>` : emptyState("No reports match this filter");
+    $$(".logRow").forEach(r => r.onclick = () => { location.hash = `#/logs/${r.dataset.id}`; });
+  };
+  $("#logStatusFilter").onchange = draw;
+  draw();
+});
+
+route("logs/:id", async (params, el) => {
+  const log = await getOne("dailyLogs", params.id);
+  if (!log) { el.innerHTML = emptyState("Report not found"); return; }
+  const machine = state.machines.find(m => m.id === log.machineId);
+  const project = state.projects.find(p => p.id === log.projectId);
+  const manager = state.users.find(u => u.id === log.managerId) || (log.managerId === state.user.uid ? state.profile : null);
+  const { sessions, breaks, repairs, maintenance, parts } = await fetchLogChildren(log.id);
+
+  el.innerHTML = `
+    ${pageHead(`Daily Report — ${fmtDate(log.date)}`, `${esc(machine?.machineId || "")} · ${esc(project?.name || "")} · ${esc(manager?.name || manager?.email || "—")}`, `<span>${statusBadgeForLog(log.status)}</span>`)}
+    <div class="grid cols-4" style="margin-bottom:14px">
+      <div class="stat"><div class="label">Operating hours</div><div class="value num">${fmtHours(log.totalWorkingHours)}</div></div>
+      <div class="stat"><div class="label">Downtime</div><div class="value num">${fmtHours(log.totalDowntimeHours)}</div></div>
+      <div class="stat"><div class="label">Rental amount</div><div class="value num">${fmtMoney(log.rentalAmount)}</div></div>
+      <div class="stat"><div class="label">Parts cost</div><div class="value num">${fmtMoney(parts.reduce((s, p) => s + (Number(p.totalPrice) || 0), 0))}</div></div>
+    </div>
+    ${log.status === "rejected" && log.rejectionReason ? `<div class="alert bad" style="margin-bottom:14px"><span class="ic">!</span><div class="txt"><b>Rejected</b><span>${esc(log.rejectionReason)}</span></div></div>` : ""}
+    <div class="card" style="margin-bottom:14px"><div class="card-title">Timeline</div>
+      ${[...sessions.map(s => ({ ...s, _type: "session" })), ...breaks.map(b => ({ ...b, _type: "break" }))].sort((a, b) => toDate(a.startTime) - toDate(b.startTime)).map(renderTimelineItem).join("") || emptyState("No sessions recorded")}
+    </div>
+    <div class="grid cols-3">
+      <div class="card"><div class="card-title">Repairs</div>${repairs.length ? repairs.map(r => `<div class="faint" style="margin-bottom:6px">${esc(r.problemDescription)}</div>`).join("") : emptyState("None")}</div>
+      <div class="card"><div class="card-title">Maintenance</div>${maintenance.length ? maintenance.map(m => `<div class="faint" style="margin-bottom:6px">${esc(m.description || m.maintenanceType)}</div>`).join("") : emptyState("None")}</div>
+      <div class="card"><div class="card-title">Items</div>${parts.length ? parts.map(p => `<div class="faint" style="margin-bottom:6px">${esc(p.itemName)} — ${esc(p.usageType)}</div>`).join("") : emptyState("None")}</div>
+    </div>
+    ${state.role === ROLES.ADMIN && log.status === "submitted" ? `
+      <div class="card" style="margin-top:14px">
+        <div class="alert info"><span class="ic">i</span><div class="txt">Approving this report will make its operating hours eligible for rental billing and maintenance-hour calculations.</div></div>
+        <div class="btnrow" style="margin-top:12px"><button class="btn bad" id="rejectBtn">Reject</button><button class="btn good" id="approveBtn">Approve Report</button></div>
+      </div>` : ""}`;
+  if ($("#approveBtn")) $("#approveBtn").onclick = async () => {
+    const ok = await confirmDialog({ title: "Approve report", message: "This will finalize the operating hours for billing and maintenance calculations. Continue?", confirmLabel: "Approve" });
+    if (!ok) return;
+    try { await approveDailyLog(log); toast("Report approved", "good"); location.hash = "#/logs"; renderRoute(); } catch (e) { toast(errorMessage(e), "bad"); }
+  };
+  if ($("#rejectBtn")) $("#rejectBtn").onclick = async () => {
+    const reason = await promptReasonDialog({ title: "Reject report", message: "The site manager will be able to correct and resubmit.", label: "Rejection reason" });
+    if (!reason) return;
+    try { await rejectDailyLog(log, reason); toast("Report rejected", "good"); location.hash = "#/logs"; renderRoute(); } catch (e) { toast(errorMessage(e), "bad"); }
+  };
+});
+
+/* ------------------------------------------------------- [V:HISTORY] --- */
+route("history", async (params, el) => {
+  const { machine } = getManagerContext();
+  if (!machine) { el.innerHTML = pageHead("History", "") + emptyState("No machine assigned yet"); return; }
+  const snap = await getDocs(query(col("dailyLogs"), where("machineId", "==", machine.id), where("managerId", "==", state.user.uid), orderBy("date", "desc"), qlimit(60)));
+  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  el.innerHTML = `${pageHead("History", `${esc(machine.machineId || machine.model)} · your submitted reports`)}
+    <div class="card pad-0">${logs.length ? `<table class="dt"><thead><tr><th>Date</th><th>Working</th><th>Rental</th><th>Status</th></tr></thead><tbody>
+      ${logs.map(l => `<tr class="logRow" data-id="${l.id}" style="cursor:pointer">
+        <td data-label="Date">${fmtDate(l.date)}</td><td data-label="Working" class="num">${fmtHours(l.totalWorkingHours)}</td>
+        <td data-label="Rental" class="num">${fmtMoney(l.rentalAmount)}</td><td data-label="Status">${statusBadgeForLog(l.status)}</td>
+      </tr>`).join("")}</tbody></table>` : emptyState("No reports yet")}</div>`;
+  $$(".logRow").forEach(r => r.onclick = () => { location.hash = `#/logs/${r.dataset.id}`; });
+});
+
+/* ===== 14-reports-telemetry.js ===== */
+
+/* ------------------------------------------------------- [V:REPORTS] --- */
+route("reports", async (params, el) => {
+  const firstOfMonth = todayISODate().slice(0, 8) + "01";
+  el.innerHTML = `
+    ${pageHead("Reports", "Filter, export and analyze operating history")}
+    <div class="card" style="margin-bottom:14px">
+      <div class="formrow" style="grid-template-columns:repeat(4,1fr)">
+        <div class="field"><label>From</label><input type="date" id="rpFrom" value="${firstOfMonth}"></div>
+        <div class="field"><label>To</label><input type="date" id="rpTo" value="${todayISODate()}"></div>
+        <div class="field"><label>Machine</label><select id="rpMachine"><option value="">All</option>${state.machines.map(m => `<option value="${m.id}">${esc(m.machineId || m.model)}</option>`).join("")}</select></div>
+        <div class="field"><label>Status</label><select id="rpStatus"><option value="approved">Approved only</option><option value="">All statuses</option></select></div>
+      </div>
+      <button class="btn primary" id="rpRun">Run report</button>
+    </div>
+    <div id="rpResults"></div>`;
+  $("#rpRun").onclick = () => runReport();
+  async function runReport() {
+    const from = $("#rpFrom").value, to = $("#rpTo").value, machineId = $("#rpMachine").value, status = $("#rpStatus").value;
+    $("#rpResults").innerHTML = `<div class="empty">Loading…</div>`;
+    const constraints = [where("date", ">=", from), where("date", "<=", to)];
+    if (machineId) constraints.push(where("machineId", "==", machineId));
+    if (status) constraints.push(where("status", "==", status));
+    const snap = await getDocs(query(col("dailyLogs"), ...constraints));
+    let logs = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.date < b.date ? -1 : 1);
+    if (state.role !== ROLES.ADMIN) logs = logs.filter(l => l.managerId === state.user.uid);
+    const workingTotal = round1(logs.reduce((s, l) => s + (Number(l.totalWorkingHours) || 0), 0));
+    const downtimeTotal = round1(logs.reduce((s, l) => s + (Number(l.totalDowntimeHours) || 0), 0));
+    const rentalTotal = round2(logs.reduce((s, l) => s + (Number(l.rentalAmount) || 0), 0));
+    const maintTotal = round1(logs.reduce((s, l) => s + (Number(l.totalMaintenanceHours) || 0), 0));
+    const repairTotal = round1(logs.reduce((s, l) => s + (Number(l.totalRepairHours) || 0), 0));
+    const utilization = calculateUtilization(workingTotal, downtimeTotal);
+    let partsCost = 0, maintCost = 0;
+    if (logs.length) {
+      const partsSnaps = await Promise.all(logs.map(l => getDocs(query(col("parts"), where("dailyLogId", "==", l.id)))));
+      partsSnaps.forEach(s => s.docs.forEach(d => { partsCost += Number(d.data().totalPrice) || 0; }));
+    }
+    const maintMachineIds = machineId ? [machineId] : state.machines.map(m => m.id);
+    const maintSnaps = await Promise.all(maintMachineIds.map(id => getDocs(query(col("maintenanceRecords"), where("machineId", "==", id), where("status", "==", "Completed")))));
+    maintSnaps.forEach(s => s.docs.forEach(d => {
+      const rec = d.data();
+      const when = rec.endedAt ? fmtISODateOnly(rec.endedAt) : null;
+      if (when && when >= from && when <= to) maintCost += Number(rec.cost) || 0;
+    }));
+    // Section 46: cost per operating hour = (maintenance + repair cost) ÷ approved operating hours.
+    const costPerHour = workingTotal > 0 ? round2((maintCost + partsCost) / workingTotal) : 0;
+    window.__reportRows = logs;
+    $("#rpResults").innerHTML = `
+      <div class="grid cols-4" style="margin-bottom:14px">
+        <div class="stat"><div class="label">Operating hours</div><div class="value num">${fmtHours(workingTotal)}</div></div>
+        <div class="stat"><div class="label">Downtime</div><div class="value num">${fmtHours(downtimeTotal)}</div></div>
+        <div class="stat"><div class="label">Utilization</div><div class="value num">${utilization}%</div><div class="foot">operating ÷ (operating + downtime) × 100</div></div>
+        <div class="stat"><div class="label">Rental total</div><div class="value num">${fmtMoney(rentalTotal)}</div></div>
+      </div>
+      <div class="grid cols-3" style="margin-bottom:14px">
+        <div class="stat"><div class="label">Repair hours</div><div class="value num">${fmtHours(repairTotal)}</div></div>
+        <div class="stat"><div class="label">Maintenance hours</div><div class="value num">${fmtHours(maintTotal)}</div></div>
+        <div class="stat"><div class="label">Cost per operating hour</div><div class="value num">${fmtMoney(costPerHour)}</div><div class="foot">(maintenance + repair cost) ÷ operating hours</div></div>
+      </div>
+      <div class="page-actions no-print" style="margin-bottom:10px"><button class="btn sm" id="rpCsv">Export CSV</button><button class="btn sm" id="rpPrint">Print</button></div>
+      <div class="card pad-0">${logs.length ? `<table class="dt"><thead><tr><th>Date</th><th>Machine</th><th>Working</th><th>Downtime</th><th>Rental</th><th>Status</th></tr></thead><tbody>
+        ${logs.map(l => { const m = state.machines.find(x => x.id === l.machineId); return `<tr>
+          <td data-label="Date">${fmtDate(l.date)}</td><td data-label="Machine">${esc(m?.machineId || "—")}</td>
+          <td data-label="Working" class="num">${fmtHours(l.totalWorkingHours)}</td><td data-label="Downtime" class="num">${fmtHours(l.totalDowntimeHours)}</td>
+          <td data-label="Rental" class="num">${fmtMoney(l.rentalAmount)}</td><td data-label="Status">${statusBadgeForLog(l.status)}</td>
+        </tr>`; }).join("")}</tbody></table>` : emptyState("No reports match these filters")}</div>`;
+    $("#rpCsv").onclick = () => exportLogsCSV(logs);
+    $("#rpPrint").onclick = () => window.print();
+  }
+  runReport();
+});
+function exportLogsCSV(logs) {
+  const header = ["Date", "Machine", "Project", "Working Hours", "Downtime Hours", "Repair Hours", "Maintenance Hours", "Rental Rate", "Rental Amount", "Status"];
+  const rows = logs.map(l => {
+    const m = state.machines.find(x => x.id === l.machineId), p = state.projects.find(x => x.id === l.projectId);
+    return [l.date, m?.machineId || "", p?.name || "", l.totalWorkingHours || 0, l.totalDowntimeHours || 0, l.totalRepairHours || 0, l.totalMaintenanceHours || 0, l.rentalRate || 0, l.rentalAmount || 0, l.status];
+  });
+  const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = `dx360-report-${todayISODate()}.csv`; a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ----------------------------------------------------- [V:TELEMETRY] --- */
+route("telemetry", async (params, el) => {
+  if (!state.machines.length) { el.innerHTML = pageHead("Telemetry", "") + emptyState("No machines yet"); return; }
+  const machine = state.machines.find(m => m.id === state.dashMachineId) || state.machines[0];
+  const snap = await getDocs(query(col("telemetryReadings"), where("machineId", "==", machine.id)));
+  const readings = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => toDate(b.readingTimestamp || b.createdAt) - toDate(a.readingTimestamp || a.createdAt));
+  const latest = readings[0];
+  const managerHours = Number(machine.lifetimeHours ?? machine.initialHourMeter) || 0;
+  const diff = latest ? round1(Math.abs(Number(latest.currentHours) - managerHours)) : null;
+
+  el.innerHTML = `
+    ${pageHead("Telemetry", esc(machine.machineId || machine.model), state.role === ROLES.ADMIN ? `<button class="btn sm primary" id="addReading">Record Reading</button>` : "")}
+    <div class="grid cols-2" style="margin-bottom:14px">
+      <div class="card"><div class="card-title">Telemetry hours</div>
+        ${latest ? `<div class="value num" style="font-size:26px">${fmtHours(latest.currentHours)}</div><div class="faint">Last updated ${fmtDateTime(latest.readingTimestamp || latest.createdAt)} · ${badge("neutral", latest.source || "Manual")}</div>`
+          : emptyState("No telemetry reading recorded", "This app never fabricates live satellite data — record a verified reading manually.")}
+      </div>
+      <div class="card"><div class="card-title">Manager-reported hour meter</div><div class="value num" style="font-size:26px">${fmtHours(managerHours)}</div>
+        ${latest ? `<div class="faint">Difference: <b class="num">${fmtHours(diff)}</b> ${diff > 1 ? badge("warn", "Discrepancy — investigate") : badge("good", "Consistent")}</div>` : ""}
+      </div>
+    </div>
+    <div class="card"><div class="card-title">Reading history</div>${readings.length ? `<table class="dt"><thead><tr><th>Date</th><th>Hours</th><th>Source</th><th>Connection</th></tr></thead><tbody>
+      ${readings.map(r => `<tr><td data-label="Date">${fmtDateTime(r.readingTimestamp || r.createdAt)}</td><td data-label="Hours" class="num">${fmtHours(r.currentHours)}</td><td data-label="Source">${esc(r.source || "Manual")}</td><td data-label="Connection">${badge(r.connectionStatus === "Connected" ? "good" : "neutral", r.connectionStatus || "Not Connected")}</td></tr>`).join("")}</tbody></table>` : emptyState("No readings yet")}</div>`;
+  if ($("#addReading")) $("#addReading").onclick = () => openTelemetryModal(machine, () => renderRoute());
+});
+function openTelemetryModal(machine, onDone) {
+  openModal({
+    title: "Record telemetry reading",
+    bodyHTML: `
+      <div class="alert info" style="margin-bottom:12px"><span class="ic">i</span><div class="txt">No live Doosan telematics API is connected — this records a manually verified reading.</div></div>
+      <div class="field"><label>Current hours *</label><input type="number" id="tlHours" step="0.1" min="0"></div>
+      <div class="field"><label>Source</label><input type="text" id="tlSource" value="Manual / External Telematics"></div>`,
+    footHTML: `<button class="btn" id="tlCancel">Cancel</button><button class="btn primary" id="tlOk">Save Reading</button>`,
+    onMount: () => {
+      $("#tlCancel").onclick = closeModal;
+      $("#tlOk").onclick = async () => {
+        const hours = Number($("#tlHours").value);
+        if (!(hours >= 0)) { toast("Enter a valid hour reading", "bad"); return; }
+        closeModal();
+        try {
+          await createDoc("telemetryReadings", { machineId: machine.id, provider: "manual", currentHours: hours, source: $("#tlSource").value.trim() || "Manual", connectionStatus: "Manual Reading", readingTimestamp: nowTS() });
+          toast("Reading recorded", "good"); onDone();
+        } catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+/* ===== 15-projects-machines.js ===== */
+
+/* ------------------------------------------------------ [V:PROJECTS] --- */
+route("projects", async (params, el) => {
+  el.innerHTML = `${pageHead("Projects", `${state.projects.length} project${state.projects.length === 1 ? "" : "s"}`, `<button class="btn sm primary" id="newProject">New Project</button>`)}
+    <div class="list" id="projList"></div>`;
+  const draw = () => {
+    $("#projList").innerHTML = state.projects.length ? state.projects.map(p => {
+      const m = state.machines.find(x => x.id === p.machineId);
+      return `<div class="rowcard" data-id="${p.id}"><div class="rc-main"><div class="rc-title">${esc(p.name)}</div><div class="rc-sub">${esc(m?.machineId || "No machine")} · ${fmtMoney(p.rentalRate)}/h · ${fmtHours(p.projectHours || 0)} logged</div></div><div class="rc-end">${badge(p.status === "Active" ? "good" : "neutral", p.status || "Active")}</div></div>`;
+    }).join("") : emptyState("No projects yet", "Create one to start assigning a machine and site manager.");
+    $$(".rowcard", $("#projList")).forEach(row => row.onclick = () => openProjectModal(state.projects.find(p => p.id === row.dataset.id), draw));
+  };
+  draw();
+  $("#newProject").onclick = () => openProjectModal(null, draw);
+});
+function openProjectModal(project, onDone) {
+  openModal({
+    title: project ? "Edit Project" : "New Project", wide: true,
+    bodyHTML: `
+      <div class="field"><label>Project name *</label><input type="text" id="pjName" value="${esc(project?.name || "")}"></div>
+      <div class="formrow">
+        <div class="field"><label>Machine</label><select id="pjMachine"><option value="">— none —</option>${state.machines.map(m => `<option value="${m.id}" ${m.id === project?.machineId ? "selected" : ""}>${esc(m.machineId || m.model)}</option>`).join("")}</select></div>
+        <div class="field"><label>Rental rate (${CURRENCY}/hour) *</label><input type="number" id="pjRate" min="0" step="0.01" value="${project?.rentalRate || ""}"></div>
+      </div>
+      <div class="formrow">
+        <div class="field"><label>Start date</label><input type="date" id="pjStart" value="${project?.startDate || todayISODate()}"></div>
+        <div class="field"><label>Status</label><select id="pjStatus">${["Active", "Completed", "Paused"].map(s => `<option ${s === (project?.status || "Active") ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label>Site manager</label><select id="pjManager"><option value="">— unassigned —</option>${state.users.filter(u => u.role === "siteManager").map(u => `<option value="${u.id}" ${(project?.siteManagerId === u.id) ? "selected" : ""}>${esc(u.name || u.email)}</option>`).join("")}</select></div>
+      ${project ? `<div class="kv" style="margin-top:6px"><div class="row"><span class="k">Project hours logged</span><span class="v num">${fmtHours(project.projectHours || 0)}</span></div></div>` : ""}`,
+    footHTML: `<button class="btn" id="pjCancel">Cancel</button><button class="btn primary" id="pjOk">${project ? "Save Changes" : "Create Project"}</button>`,
+    onMount: () => {
+      $("#pjCancel").onclick = closeModal;
+      $("#pjOk").onclick = async () => {
+        const name = $("#pjName").value.trim(), rate = Number($("#pjRate").value);
+        if (!name || !(rate >= 0)) { toast("Project name and rental rate are required", "bad"); return; }
+        const managerId = $("#pjManager").value;
+        const data = { name, machineId: $("#pjMachine").value || null, rentalRate: rate, startDate: $("#pjStart").value, status: $("#pjStatus").value, siteManagerId: managerId || null };
+        closeModal();
+        try {
+          let id = project?.id;
+          if (project) { await patchDoc("projects", id, data); await writeAudit("Project edited", "projects", id, project, data); }
+          else { id = await createDoc("projects", { ...data, projectHours: 0 }); }
+          if (data.machineId && data.status === "Active") await patchDoc("machines", data.machineId, { currentProjectId: id });
+          if (managerId) {
+            const mgr = state.users.find(u => u.id === managerId);
+            const assignedProjects = Array.from(new Set([...(mgr?.assignedProjects || []), id]));
+            const assignedMachines = data.machineId ? Array.from(new Set([...(mgr?.assignedMachines || []), data.machineId])) : (mgr?.assignedMachines || []);
+            await patchDoc("users", managerId, { assignedProjects, assignedMachines });
+          }
+          toast(project ? "Project updated" : "Project created", "good"); onDone();
+        } catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+/* ------------------------------------------------------ [V:MACHINES] --- */
+route("machines", async (params, el) => {
+  el.innerHTML = `${pageHead("Machines", `${state.machines.length} machine${state.machines.length === 1 ? "" : "s"}`, `<button class="btn sm primary" id="newMachine">New Machine</button>`)}
+    <div class="list" id="machList"></div>`;
+  const draw = () => {
+    $("#machList").innerHTML = state.machines.length ? state.machines.map(m => `
+      <div class="rowcard" data-id="${m.id}"><div class="rc-main"><div class="rc-title">${esc(m.machineId || m.model)}</div><div class="rc-sub">${esc(m.manufacturer || "Doosan")} ${esc(m.model || "DX360")} · ${fmtHours(m.lifetimeHours ?? m.initialHourMeter ?? 0)} lifetime</div></div><div class="rc-end">${badge(m.status === "Active" ? "good" : "neutral", m.status || "Active")}</div></div>`).join("") : emptyState("No machines yet");
+    $$(".rowcard", $("#machList")).forEach(row => row.onclick = () => openMachineModal(state.machines.find(m => m.id === row.dataset.id), draw));
+  };
+  draw();
+  $("#newMachine").onclick = () => openMachineModal(null, draw);
+});
+function openMachineModal(machine, onDone) {
+  openModal({
+    title: machine ? "Edit Machine" : "New Machine", wide: true,
+    bodyHTML: `
+      <div class="formrow">
+        <div class="field"><label>Machine ID *</label><input type="text" id="mcId" value="${esc(machine?.machineId || "")}" placeholder="DX360-001"></div>
+        <div class="field"><label>Status</label><select id="mcStatus">${["Active", "Idle", "Retired"].map(s => `<option ${s === (machine?.status || "Active") ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+      </div>
+      <div class="formrow">
+        <div class="field"><label>Manufacturer</label><input type="text" id="mcMfr" value="${esc(machine?.manufacturer || "Doosan")}"></div>
+        <div class="field"><label>Model</label><input type="text" id="mcModel" value="${esc(machine?.model || "DX360")}"></div>
+      </div>
+      <div class="formrow">
+        <div class="field"><label>Serial number</label><input type="text" id="mcSerial" value="${esc(machine?.serialNumber || "")}"></div>
+        <div class="field"><label>Asset / registration number</label><input type="text" id="mcAsset" value="${esc(machine?.assetNumber || "")}"></div>
+      </div>
+      ${!machine ? `<div class="field"><label>Initial hour meter *</label><input type="number" id="mcInit" min="0" step="0.1" value="0"><div class="hint">Recorded once, at registration — all future hours build from this baseline.</div></div>` : `
+        <div class="kv"><div class="row"><span class="k">Lifetime hours (approved)</span><span class="v num">${fmtHours(machine.lifetimeHours ?? machine.initialHourMeter ?? 0)}</span></div></div>
+        <button type="button" class="btn sm" id="mcAdjustBtn" style="margin-top:8px">Record Hour Adjustment</button>`}`,
+    footHTML: `<button class="btn" id="mcCancel">Cancel</button><button class="btn primary" id="mcOk">${machine ? "Save Changes" : "Create Machine"}</button>`,
+    onMount: () => {
+      $("#mcCancel").onclick = closeModal;
+      if ($("#mcAdjustBtn")) $("#mcAdjustBtn").onclick = () => { closeModal(); openHourAdjustmentModal(machine, onDone); };
+      $("#mcOk").onclick = async () => {
+        const machineId = $("#mcId").value.trim();
+        if (!machineId) { toast("Machine ID is required", "bad"); return; }
+        const data = { machineId, status: $("#mcStatus").value, manufacturer: $("#mcMfr").value.trim(), model: $("#mcModel").value.trim(), serialNumber: $("#mcSerial").value.trim(), assetNumber: $("#mcAsset").value.trim() };
+        closeModal();
+        try {
+          if (machine) { await patchDoc("machines", machine.id, data); await writeAudit("Machine edited", "machines", machine.id, machine, data); }
+          else { const init = Number($("#mcInit").value) || 0; await createDoc("machines", { ...data, initialHourMeter: init, lifetimeHours: init }); }
+          toast(machine ? "Machine updated" : "Machine created", "good"); onDone();
+        } catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+function openHourAdjustmentModal(machine, onDone) {
+  const current = Number(machine.lifetimeHours ?? machine.initialHourMeter) || 0;
+  openModal({
+    title: "Verified Hour Adjustment",
+    bodyHTML: `
+      <div class="kv" style="margin-bottom:12px"><div class="row"><span class="k">Current recorded hours</span><span class="v num">${fmtHours(current)}</span></div></div>
+      <div class="field"><label>New verified hours *</label><input type="number" id="haNew" min="0" step="0.1"></div>
+      <div class="field"><label>Reason *</label><input type="text" id="haReason" placeholder="e.g. telemetry reconciliation"></div>
+      <div class="field"><label>Evidence / reference</label><input type="text" id="haEvidence" placeholder="Telemetry reading ID, service ticket…"></div>`,
+    footHTML: `<button class="btn" id="haCancel">Cancel</button><button class="btn primary" id="haOk">Save Adjustment</button>`,
+    onMount: () => {
+      $("#haCancel").onclick = closeModal;
+      $("#haOk").onclick = async () => {
+        const newHours = Number($("#haNew").value), reason = $("#haReason").value.trim();
+        if (!(newHours >= 0) || !reason) { toast("New hours and a reason are required", "bad"); return; }
+        closeModal();
+        try {
+          await patchDoc("machines", machine.id, { lifetimeHours: newHours });
+          await writeAudit("Correction made", "machines", machine.id, { lifetimeHours: current }, { lifetimeHours: newHours, difference: round2(newHours - current), evidence: $("#haEvidence").value.trim() }, reason);
+          toast("Hour adjustment recorded", "good"); onDone();
+        } catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+/* ===== 16-users-settings-audit.js ===== */
+
+/* --------------------------------------------------------- [V:USERS] --- */
+route("users", async (params, el) => {
+  el.innerHTML = `${pageHead("Users", `${state.users.length} account${state.users.length === 1 ? "" : "s"}`)}<div class="list" id="userList"></div>`;
+  const draw = () => {
+    $("#userList").innerHTML = state.users.length ? state.users.map(u => `
+      <div class="rowcard" data-id="${u.id}"><div class="rc-main"><div class="rc-title">${esc(u.name || u.email)}</div><div class="rc-sub">${esc(u.email || "")}</div></div>
+      <div class="rc-end">${u.active ? badge(u.role === "admin" ? "info" : "good", u.role === "admin" ? "Admin" : "Site Manager") : badge("warn", "Pending")}</div></div>`).join("") : emptyState("No accounts yet", "Ask people to create an account — they'll appear here awaiting authorization.");
+    $$(".rowcard", $("#userList")).forEach(row => row.onclick = () => openUserModal(state.users.find(u => u.id === row.dataset.id), draw));
+  };
+  draw();
+});
+function openUserModal(user, onDone) {
+  openModal({
+    title: user.name || user.email, wide: true,
+    bodyHTML: `
+      <div class="kv" style="margin-bottom:12px"><div class="row"><span class="k">Email</span><span class="v">${esc(user.email)}</span></div></div>
+      <div class="formrow">
+        <div class="field"><label>Role</label><select id="usRole"><option value="siteManager" ${user.role === "siteManager" ? "selected" : ""}>Site Manager</option><option value="admin" ${user.role === "admin" ? "selected" : ""}>Admin</option></select></div>
+        <div class="field"><label>Status</label><select id="usActive"><option value="1" ${user.active ? "selected" : ""}>Active</option><option value="0" ${!user.active ? "selected" : ""}>Inactive</option></select></div>
+      </div>
+      <div class="field"><label>Assigned projects</label>
+        <select id="usProjects" multiple size="4">${state.projects.map(p => `<option value="${p.id}" ${(user.assignedProjects || []).includes(p.id) ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></div>
+      <div class="field"><label>Assigned machines</label>
+        <select id="usMachines" multiple size="4">${state.machines.map(m => `<option value="${m.id}" ${(user.assignedMachines || []).includes(m.id) ? "selected" : ""}>${esc(m.machineId || m.model)}</option>`).join("")}</select></div>`,
+    footHTML: `<button class="btn" id="usCancel">Cancel</button><button class="btn primary" id="usOk">Save</button>`,
+    onMount: () => {
+      $("#usCancel").onclick = closeModal;
+      $("#usOk").onclick = async () => {
+        const data = {
+          role: $("#usRole").value, active: $("#usActive").value === "1",
+          assignedProjects: Array.from($("#usProjects").selectedOptions).map(o => o.value),
+          assignedMachines: Array.from($("#usMachines").selectedOptions).map(o => o.value),
+        };
+        closeModal();
+        try { await patchDoc("users", user.id, data); toast("User updated", "good"); onDone(); } catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+/* ------------------------------------------------------ [V:SETTINGS] --- */
+route("settings", async (params, el) => {
+  el.innerHTML = `${pageHead("Settings", "Maintenance schedules")}
+    <div class="alert info" style="margin-bottom:14px"><span class="ic">i</span><div class="txt">Checklist tasks are never invented by this app — each milestone starts empty and Admin-configured. Fill in verified tasks from your machine's own service chart before relying on a checklist.</div></div>
+    <div class="grid cols-2" id="schedGrid"></div>`;
+  drawScheduleGrid();
+});
+function drawScheduleGrid() {
+  const grid = $("#schedGrid");
+  if (!grid) return;
+  grid.innerHTML = MAINTENANCE_MILESTONES.map(tier => {
+    const sched = state.maintenanceSchedules.find(s => Number(s.milestoneHours) === tier);
+    return `<div class="card">
+      <div class="card-title">${tier}-hour ${tier === 5000 ? `<span class="faint">(custom major service)</span>` : ""}
+        <span>${sched ? badge("neutral", sched.source || "Admin Configured") : ""}</span></div>
+      ${sched ? `
+        <div class="list" style="margin-bottom:10px">${(sched.tasks || []).length ? sched.tasks.map(t => `
+          <div class="rowcard" style="cursor:default"><div class="rc-main"><div class="rc-title">${esc(t.name)}</div><div class="rc-sub">${esc(t.action)}${t.quantity ? ` · ${esc(t.quantity)} ${esc(t.unit || "")}` : ""}${t.required === false ? " · optional" : ""}</div></div>
+            <button class="btn sm ghost" data-del-task="${t.taskId}" data-sched="${sched.id}">Remove</button></div>`).join("") : emptyState("No tasks yet")}</div>
+        <button class="btn sm block" data-add-task="${sched.id}">Add Task</button>`
+        : `<div class="empty" style="margin-bottom:10px"><b>Not configured yet</b><span>Initialize this tier, then add verified tasks.</span></div><button class="btn sm primary block" data-init="${tier}">Initialize ${tier}h Schedule</button>`}
+    </div>`;
+  }).join("");
+  $$("[data-init]").forEach(b => b.onclick = async () => {
+    try { await createDoc("maintenanceSchedules", { milestoneHours: Number(b.dataset.init), title: `${b.dataset.init}-hour service`, description: "", tasks: [], active: true, source: "Admin Configured" }); toast("Schedule initialized", "good"); }
+    catch (e) { toast(errorMessage(e), "bad"); }
+  });
+  $$("[data-add-task]").forEach(b => b.onclick = () => openTaskModal(b.dataset.addTask));
+  $$("[data-del-task]").forEach(b => b.onclick = async () => {
+    const sched = state.maintenanceSchedules.find(s => s.id === b.dataset.sched);
+    const tasks = (sched.tasks || []).filter(t => t.taskId !== b.dataset.delTask);
+    try { await patchDoc("maintenanceSchedules", sched.id, { tasks }); toast("Task removed", "good"); } catch (e) { toast(errorMessage(e), "bad"); }
+  });
+}
+function openTaskModal(scheduleId) {
+  openModal({
+    title: "Add Task",
+    bodyHTML: `
+      <div class="field"><label>Task name *</label><input type="text" id="tkName"></div>
+      <div class="formrow">
+        <div class="field"><label>Action</label><select id="tkAction">${MAINTENANCE_TASK_ACTIONS.map(a => `<option>${esc(a)}</option>`).join("")}</select></div>
+        <div class="field"><label>Category</label><input type="text" id="tkCategory" placeholder="Engine, hydraulic…"></div>
+      </div>
+      <div class="formrow">
+        <div class="field"><label>Quantity</label><input type="text" id="tkQty" placeholder="e.g. 19"></div>
+        <div class="field"><label>Unit</label><input type="text" id="tkUnit" placeholder="L, pcs…"></div>
+      </div>
+      <div class="check"><input type="checkbox" id="tkRequired" checked><label for="tkRequired">Required for service completion</label></div>
+      <div class="field" style="margin-top:10px"><label>Notes</label><textarea id="tkNotes" rows="2"></textarea></div>`,
+    footHTML: `<button class="btn" id="tkCancel">Cancel</button><button class="btn primary" id="tkOk">Add Task</button>`,
+    onMount: () => {
+      $("#tkCancel").onclick = closeModal;
+      $("#tkOk").onclick = async () => {
+        const name = $("#tkName").value.trim();
+        if (!name) { toast("Task name is required", "bad"); return; }
+        const sched = state.maintenanceSchedules.find(s => s.id === scheduleId);
+        const task = { taskId: uid(), name, action: $("#tkAction").value, category: $("#tkCategory").value.trim(), quantity: $("#tkQty").value.trim(), unit: $("#tkUnit").value.trim(), required: $("#tkRequired").checked, notes: $("#tkNotes").value.trim() };
+        closeModal();
+        try { await patchDoc("maintenanceSchedules", scheduleId, { tasks: [...(sched.tasks || []), task] }); toast("Task added", "good"); }
+        catch (e) { toast(errorMessage(e), "bad"); }
+      };
+    }
+  });
+}
+
+/* --------------------------------------------------------- [V:AUDIT] --- */
+route("audit", async (params, el) => {
+  el.innerHTML = `${pageHead("Audit Log", "Every submission, approval, rejection and correction")}<div class="card pad-0" id="auditTable"></div>`;
+  const snap = await getDocs(query(col("auditLogs"), orderBy("timestamp", "desc"), qlimit(150)));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  $("#auditTable").innerHTML = rows.length ? `<table class="dt"><thead><tr><th>When</th><th>Action</th><th>By</th><th>Entity</th><th>Reason</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td data-label="When">${fmtDateTime(r.timestamp)}</td><td data-label="Action">${esc(r.action)}</td><td data-label="By">${esc(r.userName || r.userRole || "—")}</td><td data-label="Entity">${esc(r.entityType || "—")}</td><td data-label="Reason">${esc(r.reason || "—")}</td></tr>`).join("")}</tbody></table>` : emptyState("No audit entries yet");
+});
+
+/* ===== 17-bootstrap.js ===== */
+
+/* ------------------------------------------------------------ [BOOT] --- */
+// All routes are registered by this point (every view module above has
+// called route(...) synchronously) — safe to start auth + rendering now.
+registerServiceWorker();
+boot();
+
+</script>
+</body>
+</html>
