@@ -1,5 +1,5 @@
 /* =====================================================================
-   DOOSAN 360 — SERVICE WORKER
+   DOOSAN 340 — SERVICE WORKER
    Caches the static app shell only. All Firebase Auth/Firestore traffic
    (firestore.googleapis.com, identitytoolkit, gstatic Firebase SDK
    modules, Google Fonts) is left alone — Firestore's own offline
@@ -8,7 +8,7 @@
    makes sure the app itself can still launch with no connection.
    ===================================================================== */
 
-const CACHE_VERSION = 'd360-shell-v1';
+const CACHE_VERSION = 'd340-shell-v2';
 const APP_SHELL = [
   './',
   './index.html',

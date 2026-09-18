@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
-<title>Doosan 360 — Field Service</title>
+<title>Doosan 340 — Field Service</title>
 <meta name="description" content="Doosan DX360 excavator field operations, maintenance and rental tracking.">
 <meta name="theme-color" content="#1A1C1F">
 <meta name="mobile-web-app-capable" content="yes">
@@ -18,7 +18,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700;800&family=Noto+Sans+Ethiopic:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ============================================================
-   DOOSAN 360 — DESIGN SYSTEM
+   DOOSAN 340 — DESIGN SYSTEM
    Industrial / premium / field-ready. Doosan orange as accent
    only, carried by a graphite + warm-neutral base.
    ============================================================ */
@@ -325,9 +325,10 @@ textarea.input{ padding:var(--sp-3) var(--sp-4); min-height:88px; resize:vertica
 
 /* Login */
 .auth-wrap{ min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:var(--sp-6); max-width:420px; margin:0 auto; }
-.auth-mark{ width:64px;height:64px; border-radius:var(--r-lg); background:var(--c-charcoal); display:flex;align-items:center;justify-content:center; margin-bottom:var(--sp-5); }
-.auth-title{ font-size:24px; font-weight:800; margin-bottom:6px; }
 .auth-sub{ font-size:14px; color:var(--c-ink-soft); margin-bottom:var(--sp-6); line-height:1.5; }
+.auth-brand{ margin-bottom:var(--sp-7); }
+.auth-brand-mark{ font-size:13px; font-weight:800; letter-spacing:.16em; color:var(--c-orange-600); text-transform:uppercase; margin-bottom:12px; }
+.auth-brand-tagline{ font-size:20px; font-weight:700; line-height:1.6; color:var(--c-ink); letter-spacing:-.005em; }
 .lang-switch{ display:flex; gap:6px; justify-content:center; margin-top:var(--sp-6); }
 .lang-switch button{ border:none;background:none; font-size:13px; font-weight:700; color:var(--c-ink-faint); padding:6px 10px; border-radius:var(--r-pill); }
 .lang-switch button[aria-current="true"]{ color:var(--c-orange); background:var(--c-orange-50); }
@@ -367,14 +368,14 @@ svg.ic{ width:20px;height:20px; stroke:currentColor; fill:none; stroke-width:2; 
 </head>
 <body>
 <div id="app">
-  <div class="screen" style="padding-top:40vh;text-align:center;color:var(--c-ink-faint)">Doosan 360 …</div>
+  <div class="screen" style="padding-top:40vh;text-align:center;color:var(--c-ink-faint)">Doosan 340 …</div>
 </div>
 <div id="overlays"></div>
 <div class="toast-wrap" id="toastWrap"></div>
 
 <script type="module">
 /* =====================================================================
-   DOOSAN 360 — FIELD SERVICE PWA
+   DOOSAN 340 — FIELD SERVICE PWA
    Single-file application logic. Sections are marked with banners.
    Firebase Auth + Firestore only. No Cloud Functions, no backend.
    ===================================================================== */
@@ -668,8 +669,7 @@ const MAINT_GROUP_ORDER = ['lube','engine','fuel','hydraulic','undercarriage','c
    --------------------------------------------------------------------- */
 const DICT = {
 en: {
-  appName:"Doosan 360", appNameShort:"MTM",
-  // common
+  appName:"Doosan 340", appNameShort:"MTM",
   loading:"Loading…", save:"Save", cancel:"Cancel", submit:"Submit", close:"Close",
   back:"Back", next:"Next", done:"Done", edit:"Edit", delete:"Delete", remove:"Remove",
   confirm:"Confirm", yes:"Yes", no:"No", ok:"OK", retry:"Retry", search:"Search",
@@ -680,7 +680,7 @@ en: {
   seeAll:"See all", viewAll:"View all", continue_:"Continue", review:"Review",
   logout:"Log out", settings:"Settings", language:"Language",
   // auth
-  loginTitle:"Doosan 360", loginSub:"Field Service — sign in with the phone number and password your Admin gave you.",
+  brandTagline:"MTM General Trading — Machinery Rental, Operations & Maintenance", loginSub:"Field Service — sign in with the phone number and password your Admin gave you.",
   phoneNumber:"Phone number", password:"Password", loginBtn:"Log in", loggingIn:"Signing in…",
   showPassword:"Show password", forgotHint:"Forgot your password? Ask your Admin to reset it.",
   bootstrapTitle:"First-time setup", bootstrapSub:"No Admin account exists yet on this app. Create the first Administrator account to get started.",
@@ -791,7 +791,7 @@ en: {
   emptyNoMachines:"No machines yet", emptyNoMachinesSub:"Register a machine to assign it to a project.",
 },
 ti: {
-  appName:"ዶሳን 360", appNameShort:"MTM",
+  appName:"ዶሳን 340", appNameShort:"MTM",
   loading:"ይጽዓን ኣሎ…", save:"ዓቅብ", cancel:"ስረዝ", submit:"ላኣኽ", close:"ዕጸው",
   back:"ተመለስ", next:"ቀጽል", done:"ተወዲኡ", edit:"ኣርም", delete:"ደምስስ", remove:"ኣወግድ",
   confirm:"ኣረጋግጽ", yes:"እወ", no:"ኣይፋል", ok:"እሺ", retry:"ደጊምካ ፈትን", search:"ድለ",
@@ -801,7 +801,7 @@ ti: {
   today:"ሎሚ", yesterday:"ትማሊ", notes:"መብርሂ", reason:"ምኽንያት", specifyReason:"ምኽንያት ግለጽ",
   seeAll:"ኩሉ ርአ", viewAll:"ኩሉ ርአ", continue_:"ቀጽል", review:"ግምገማ",
   logout:"ውጻእ", settings:"ቅንብር", language:"ቋንቋ",
-  loginTitle:"ዶሳን 360", loginSub:"ናይ ስራሕ መእተዊ — በቲ ኣመሓዳሪ ዝሃበካ ናይ ስልኪ ቁጽርን ፓስወርድን እተው።",
+  brandTagline:"MTM ሓፈሻዊ ንግዲ ማሽናት ኪራይን ስርሓትን ጽገናን መተግበሪ", loginSub:"ናይ ስራሕ መእተዊ — በቲ ኣመሓዳሪ ዝሃበካ ናይ ስልኪ ቁጽርን ፓስወርድን እተው።",
   phoneNumber:"ቁጽሪ ስልኪ", password:"ፓስወርድ", loginBtn:"እተው", loggingIn:"ይኣቱ ኣሎ…",
   showPassword:"ፓስወርድ ኣርኢ", forgotHint:"ፓስወርድ ረሲዕካዮ? ኣመሓዳሪ ይቀይሮ።",
   bootstrapTitle:"ናይ መጀመርታ ምድላው", bootstrapSub:"ክሳብ ሕጂ ኣብዚ ኣፕ ናይ ኣመሓዳሪ ኣካውንት የለን። ናይ መጀመርታ ኣመሓዳሪ ኣካውንት ፍጠር።",
@@ -1068,7 +1068,6 @@ function closeAllOverlays(){ S.overlayStack = []; renderOverlays(); }
 
 function goto(route, params={}){
   S.route = route; S.sub = null;
-  pushView(route, params);
   render();
   window.scrollTo(0,0);
 }
@@ -1816,8 +1815,10 @@ Object.assign(ACTIONS, {
 function screenLogin(){
   const err = DRAFT._loginErr;
   return `<div class="auth-wrap">
-    <div class="auth-mark">${ic('truck')}</div>
-    <div class="auth-title">${escapeHtml(t('loginTitle'))}</div>
+    <div class="auth-brand">
+      <div class="auth-brand-mark">MTM</div>
+      <div class="auth-brand-tagline">${escapeHtml(t('brandTagline'))}</div>
+    </div>
     <div class="auth-sub">${escapeHtml(t('loginSub'))}</div>
     <div class="field">
       <label>${escapeHtml(t('phoneNumber'))}</label>
