@@ -1,27 +1,26 @@
-// DX360 Fleet Ops — Service Worker
-// Bump CACHE_VERSION on every deploy so the old cache is dropped and
-// the new app shell takes over. Firestore's own offline persistence
-// (enabled in index.html) handles data sync; this worker only handles
-// the app shell so the PWA can still *launch* with no network.
+/* =====================================================================
+   DOOSAN 360 — SERVICE WORKER
+   Caches the static app shell only. All Firebase Auth/Firestore traffic
+   (firestore.googleapis.com, identitytoolkit, gstatic Firebase SDK
+   modules, Google Fonts) is left alone — Firestore's own offline
+   persistence layer (see initializeFirestore/persistentLocalCache in
+   index.html) is what keeps data working offline, this worker only
+   makes sure the app itself can still launch with no connection.
+   ===================================================================== */
 
-const CACHE_VERSION = 'dx360-ops-v1';
+const CACHE_VERSION = 'd360-shell-v1';
 const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_VERSION)
-      .then((cache) => Promise.all(
-        // Cache each shell asset independently so one missing file
-        // (e.g. an icon not deployed yet) can't fail the whole install
-        // the way cache.addAll's all-or-nothing behaviour would.
-        APP_SHELL.map((url) => cache.add(url).catch((err) => console.warn('[sw] could not cache', url, err)))
-      ))
+      .then((cache) => cache.addAll(APP_SHELL))
       .then(() => self.skipWaiting())
   );
 });
@@ -29,62 +28,40 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(
-        keys.filter((key) => key !== CACHE_VERSION)
-            .map((key) => caches.delete(key))
+      .then((names) => Promise.all(
+        names.filter((n) => n !== CACHE_VERSION).map((n) => caches.delete(n))
       ))
       .then(() => self.clients.claim())
   );
 });
 
-// Let the page force an immediate takeover after it has told the user
-// an update is ready, instead of waiting for every tab to close.
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
-  }
-});
+function isAppShellRequest(url) {
+  // Only same-origin GET requests for the shell files themselves.
+  return url.origin === self.location.origin;
+}
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-
-  // Only handle GET — never intercept Firestore/Auth network calls,
-  // those go straight to the network and are managed by the SDK's own
-  // offline cache, not this worker.
-  if (req.method !== 'GET') return;
+  if (req.method !== 'GET') return; // never touch writes
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
 
-  // Navigations: try the network first (so users get the newest shell
-  // when online) but never leave someone stranded — fall back to the
-  // cached shell the instant the network fails or times out.
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put('./index.html', copy));
-          return res;
-        })
-        .catch(() => caches.match('./index.html'))
-    );
-    return;
-  }
+  // Let all cross-origin traffic (Firebase Auth, Firestore, Google
+  // Fonts, gstatic SDK) go straight to the network untouched.
+  if (!isAppShellRequest(url)) return;
 
-  // Static shell assets: cache-first, refresh in the background so the
-  // cache doesn't go stale forever while still answering instantly.
+  // Network-first for the app shell so updates are picked up quickly,
+  // falling back to cache when offline.
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_VERSION).then((cache) => cache.put(req, copy)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') self.skipWaiting();
 });

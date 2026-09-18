@@ -1,303 +1,187 @@
 rules_version = '2';
 
 // =====================================================================
-// DX360 Fleet Ops — Firestore Security Rules
+// DOOSAN 360 — FIRESTORE SECURITY RULES
 //
-// Two roles only: admin, siteManager.
-// A user's role/active flag/assignments live on users/{uid}.
-// Nothing here trusts the client: every check re-reads users/{uid}
-// server-side, so hiding a button in the UI is never the only defense.
+// Exactly two roles exist: admin and siteManager (users/{uid}.role).
+// Admin has broad administrative authority; Site Manager is restricted
+// to the projects/machines listed on their own user document
+// (assignedProjectIds / assignedMachineIds) and to their own
+// operational records. There is no public sign-up — every users/{uid}
+// document is created either by an Admin, or exactly once, by the
+// first-run bootstrap path (see `users` and `system/meta` below).
+// Firebase Auth + Firestore only; no Cloud Functions required.
 //
-// Core invariants enforced below:
-//  - A Site Manager only ever touches machines/projects listed in
-//    their own assignedMachines / assignedProjects arrays.
-//  - A Site Manager can create/edit their own dailyLogs (and the
-//    records attached to them) only while status is 'draft' or
-//    'rejected', and can only move status draft -> submitted.
-//  - Only an Admin can move status submitted -> approved/rejected.
-//  - Once a dailyLog is 'approved', no client write can change it at
-//    all (Site Manager AND Admin) — corrections go through
-//    correctionRequests instead, which preserves an audit trail.
-//  - auditLogs is append-only: created by clients, never updated or
-//    deleted, and only Admin can read it.
+// `allow read` below intentionally covers both `get` and `list`: every
+// condition here is expressed in terms of the document actually being
+// read (resource.data / the path's document id) plus the caller's own
+// profile, so Firestore can validate it per-document for list/query
+// operations the same way it does for a single get.
 // =====================================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------
-    function isSignedIn() {
-      return request.auth != null;
+    // ---- helpers ---------------------------------------------------
+    function signedIn() { return request.auth != null; }
+    function myUid() { return request.auth.uid; }
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(myUid())).data;
     }
-
-    function me() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-
-    function isActiveUser() {
-      return isSignedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && me().active == true;
-    }
-
-    function role() {
-      return me().role;
-    }
-
     function isAdmin() {
-      return isActiveUser() && role() == 'admin';
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(myUid()))
+        && myProfile().role == 'admin' && myProfile().active == true;
     }
-
     function isSiteManager() {
-      return isActiveUser() && role() == 'siteManager';
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(myUid()))
+        && myProfile().role == 'siteManager' && myProfile().active == true;
+    }
+    function assignedToProject(projectId) {
+      return isSiteManager() && (projectId in myProfile().assignedProjectIds);
+    }
+    function assignedToMachine(machineId) {
+      return isSiteManager() && (machineId in myProfile().assignedMachineIds);
+    }
+    // Restrict a write to only the given fields (plus bookkeeping),
+    // used for the narrow carve-outs a Site Manager needs on the
+    // machine document (e.g. flipping status during a repair) without
+    // granting general machine-editing rights.
+    function onlyChanged(allowedKeys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedKeys);
     }
 
-    function assignedProjects() {
-      return isActiveUser() && ('assignedProjects' in me()) ? me().assignedProjects : [];
-    }
-
-    function assignedMachines() {
-      return isActiveUser() && ('assignedMachines' in me()) ? me().assignedMachines : [];
-    }
-
-    function assignedToProject(pid) {
-      return isSiteManager() && pid in assignedProjects();
-    }
-
-    function assignedToMachine(mid) {
-      return isSiteManager() && mid in assignedMachines();
-    }
-
-    // Fetches a parent dailyLog so subordinate collections (sessions,
-    // breaks, repairs, maintenance, parts) can check its status/owner
-    // without duplicating that data onto every child document.
-    function parentLog(dailyLogId) {
-      return get(/databases/$(database)/documents/dailyLogs/$(dailyLogId)).data;
-    }
-
-    function parentLogIsEditableByManager(dailyLogId) {
-      let log = parentLog(dailyLogId);
-      return log.managerId == request.auth.uid
-        && log.status in ['draft', 'rejected'];
-    }
-
-    function unchanged(field) {
-      return request.resource.data[field] == resource.data[field];
-    }
-
-    // ------------------------------------------------------------
-    // users — profile + role + assignments
-    // ------------------------------------------------------------
-    match /users/{userId} {
-      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
-
-      // A brand-new auth account may create ITS OWN profile doc, but
-      // only in the unauthorized/pending state. It can never grant
-      // itself a role or activate itself — only an Admin can do that
-      // via update. (Bootstrapping the very first Admin account is a
-      // one-time manual step in the Firebase console, as usual for
-      // systems with no server-side trigger.)
-      allow create: if isSignedIn()
-        && request.auth.uid == userId
-        && request.resource.data.active == false
-        && !('role' in request.resource.data);
-
-      allow update: if isAdmin();
-      allow delete: if false;
-    }
-
-    // ------------------------------------------------------------
-    // machines
-    // ------------------------------------------------------------
-    match /machines/{machineId} {
-      allow read: if isAdmin() || assignedToMachine(machineId);
-      allow write: if isAdmin();
-    }
-
-    // ------------------------------------------------------------
-    // projects
-    // ------------------------------------------------------------
-    match /projects/{projectId} {
-      allow read: if isAdmin() || assignedToProject(projectId);
-      // Rental rate and all other project settings are Admin-only.
-      allow write: if isAdmin();
-    }
-
-    // ------------------------------------------------------------
-    // dailyLogs — the approval boundary for billing + machine hours
-    // ------------------------------------------------------------
-    match /dailyLogs/{logId} {
-      allow read: if isAdmin() || (isSiteManager() && resource.data.managerId == request.auth.uid);
-
-      allow create: if isSiteManager()
-        && assignedToProject(request.resource.data.projectId)
-        && assignedToMachine(request.resource.data.machineId)
-        && request.resource.data.managerId == request.auth.uid
-        && request.resource.data.status in ['draft', 'submitted'];
-
-      // Site Manager: may keep editing their own draft/rejected log,
-      // and may move draft -> submitted. A rejected log stays editable
-      // (status may remain 'rejected' while they fix it, or advance to
-      // 'submitted' once resolved) but can never jump straight to
-      // 'approved', and an approved log can never be touched again.
-      allow update: if (
-          isSiteManager()
-          && resource.data.managerId == request.auth.uid
-          && resource.data.status in ['draft', 'rejected']
-          && request.resource.data.managerId == request.auth.uid
-          && request.resource.data.status in ['draft', 'rejected', 'submitted']
-        ) || (
-          // Admin: may only move submitted -> approved/rejected, and
-          // may not silently rewrite an already-approved log.
-          isAdmin()
-          && resource.data.status == 'submitted'
-          && request.resource.data.status in ['approved', 'rejected']
-        );
-
-      allow delete: if isSiteManager()
-        && resource.data.managerId == request.auth.uid
-        && resource.data.status == 'draft';
-    }
-
-    // ------------------------------------------------------------
-    // Subordinate records of a dailyLog: sessions, breaks, repairs,
-    // maintenance performed inline during the day, and items used.
-    // Same shape of rule for each: editable by the owning manager
-    // only while the parent log is still draft/rejected; Admin has
-    // read access for anything they're authorized to see on the log.
-    // ------------------------------------------------------------
-    match /operatingSessions/{id} {
-      allow read: if isAdmin() || (isSiteManager() && parentLog(resource.data.dailyLogId).managerId == request.auth.uid);
-      allow create: if isSiteManager() && parentLogIsEditableByManager(request.resource.data.dailyLogId);
-      allow update, delete: if isAdmin() || (isSiteManager() && parentLogIsEditableByManager(resource.data.dailyLogId));
-    }
-
-    match /breakRecords/{id} {
-      allow read: if isAdmin() || (isSiteManager() && parentLog(resource.data.dailyLogId).managerId == request.auth.uid);
-      allow create: if isSiteManager() && parentLogIsEditableByManager(request.resource.data.dailyLogId);
-      allow update, delete: if isAdmin() || (isSiteManager() && parentLogIsEditableByManager(resource.data.dailyLogId));
-    }
-
-    match /repairRecords/{id} {
-      allow read: if isAdmin() || (isSiteManager() && parentLog(resource.data.dailyLogId).managerId == request.auth.uid);
-      allow create: if isSiteManager() && parentLogIsEditableByManager(request.resource.data.dailyLogId);
-      allow update, delete: if isAdmin() || (isSiteManager() && parentLogIsEditableByManager(resource.data.dailyLogId));
-    }
-
-    match /maintenanceRecords/{id} {
-      // Completed maintenance is a real record, not just a milestone
-      // crossing — Admin can also create/approve these directly (e.g.
-      // logging a service performed outside a daily-log flow).
-      allow read: if isAdmin() || (isSiteManager() && assignedToMachine(resource.data.machineId));
-      allow create: if isAdmin()
-        || (isSiteManager() && assignedToMachine(request.resource.data.machineId)
-            && (!('dailyLogId' in request.resource.data) || parentLogIsEditableByManager(request.resource.data.dailyLogId)));
-      // Section 4 lets a Site Manager record maintenance and mark its
-      // tasks completed. A formal milestone-service record stays
-      // editable by them only while still 'In Progress' — once
-      // Completed it's locked history, same as an approved daily log,
-      // and only Admin can still correct it. An ad-hoc note (no
-      // milestone, just tied to today's daily log) stays editable by
-      // them for as long as that daily log itself is still editable.
-      allow update: if isAdmin()
-        || (isSiteManager() && assignedToMachine(resource.data.machineId) && resource.data.status == 'In Progress')
-        || (isSiteManager() && assignedToMachine(resource.data.machineId) && resource.data.maintenanceMilestone == null
-            && 'dailyLogId' in resource.data && parentLogIsEditableByManager(resource.data.dailyLogId));
-      allow delete: if isAdmin();
-    }
-
-    match /parts/{id} {
-      allow read: if isAdmin() || (isSiteManager() && assignedToMachine(resource.data.machineId));
-      allow create: if isAdmin()
-        || (isSiteManager() && assignedToMachine(request.resource.data.machineId)
-            // Purchased items must always carry a price — never allow
-            // a purchased part to be saved without one.
-            && (request.resource.data.usageType != 'Purchased'
-                || (request.resource.data.unitPrice is number && request.resource.data.unitPrice > 0)));
-      allow update, delete: if isAdmin();
-    }
-
-    match /expenses/{id} {
-      allow read: if isAdmin() || (isSiteManager() && assignedToProject(resource.data.projectId));
-      allow create: if isAdmin() || (isSiteManager() && assignedToProject(request.resource.data.projectId));
-      allow update, delete: if isAdmin();
-    }
-
-    match /suppliers/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-
-    // ------------------------------------------------------------
-    // maintenanceSchedules / maintenanceTasks — checklist source of
-    // truth. Admin-configurable only, everyone assigned can read.
-    // ------------------------------------------------------------
-    match /maintenanceSchedules/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-
-    match /maintenanceTasks/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-
-    // ------------------------------------------------------------
-    // telemetryReadings — Admin-recorded / external-source readings.
-    // Never silently overwritten: each doc is a new reading, not an
-    // edit of a prior one.
-    // ------------------------------------------------------------
-    match /telemetryReadings/{id} {
-      allow read: if isAdmin() || assignedToMachine(resource.data.machineId);
-      allow create: if isAdmin();
+    // -----------------------------------------------------------------
+    // system/meta — single doc gating first-run bootstrap of the very
+    // first Administrator account. Readable by anyone, even signed out,
+    // so the login screen can decide whether to show first-time setup;
+    // it holds no sensitive data. Created exactly once; never updated
+    // or deleted afterward.
+    // -----------------------------------------------------------------
+    match /system/meta {
+      allow get: if true;
+      allow list: if false;
+      allow create: if !exists(/databases/$(database)/documents/system/meta)
+                    && signedIn()
+                    && request.resource.data.adminBootstrapped == true;
       allow update, delete: if false;
     }
 
-    // ------------------------------------------------------------
-    // correctionRequests — the only path to touch an approved record.
-    // Site Manager can open one against their own logs; only Admin
-    // resolves it, and resolution must write an auditLogs entry
-    // (enforced by app logic + the append-only audit rule below).
-    // ------------------------------------------------------------
-    match /correctionRequests/{id} {
-      allow read: if isAdmin() || (isSiteManager() && resource.data.requestedBy == request.auth.uid);
-      allow create: if isSiteManager() && request.resource.data.requestedBy == request.auth.uid
-        && request.resource.data.status == 'pending';
+    // -----------------------------------------------------------------
+    // users/{uid}
+    // -----------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if signedIn() && (myUid() == uid || isAdmin());
+      // Two ways a user document may be created:
+      //  1) Admin creates ANY other account (Admin or Site Manager) —
+      //     how every account except the first comes to exist.
+      //  2) First-run bootstrap: a brand-new auth user may create their
+      //     OWN doc as 'admin', but only while system/meta does not
+      //     exist yet (i.e. before any Admin has been bootstrapped).
+      //     Creating system/meta in the same batch closes this path
+      //     forever.
+      allow create: if isAdmin()
+                    || (signedIn() && myUid() == uid
+                        && request.resource.data.role == 'admin'
+                        && request.resource.data.active == true
+                        && !exists(/databases/$(database)/documents/system/meta));
       allow update: if isAdmin();
       allow delete: if false;
     }
 
-    // ------------------------------------------------------------
-    // notifications — per-user, read-only from the client's own POV.
-    // ------------------------------------------------------------
-    match /notifications/{id} {
-      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
-      allow create: if isActiveUser();
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid
-        && unchanged('userId'); // e.g. marking read — cannot reassign
+    // -----------------------------------------------------------------
+    // projects/{id}
+    // -----------------------------------------------------------------
+    match /projects/{id} {
+      allow read: if isAdmin() || assignedToProject(id);
+      allow create, update: if isAdmin();
       allow delete: if false;
     }
 
-    // ------------------------------------------------------------
-    // auditLogs — append-only. No client may ever update or delete.
-    // ------------------------------------------------------------
+    // -----------------------------------------------------------------
+    // machines/{id}
+    // Site Managers may only flip the narrow set of operational fields
+    // that legitimately change while they work the machine (status
+    // during a repair/resume, and the maintenance engine's maintState
+    // bookkeeping when they complete a service event). Everything
+    // administrative (rental rate, lifetimeHours, projectId,
+    // operatingConditions, creation) is Admin-only.
+    // -----------------------------------------------------------------
+    match /machines/{id} {
+      allow read: if isAdmin() || assignedToMachine(id);
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+                    || (assignedToMachine(id)
+                        && onlyChanged(['status','maintState','updatedAt','updatedBy']));
+      allow delete: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // dailyLogs/{id} — the operating-log state machine.
+    // A Site Manager may only touch their own logs, and only before
+    // submission (or after a rejection, which reopens the record to
+    // them). Once submitted it is locked to them; once approved it is
+    // immutable to everyone except through the Admin correction path
+    // (still an Admin-only update here, applied by the app's
+    // correctApprovedLog()).
+    // -----------------------------------------------------------------
+    match /dailyLogs/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.managerId == myUid());
+      allow create: if isAdmin()
+                    || (isSiteManager()
+                        && request.resource.data.managerId == myUid()
+                        && assignedToMachine(request.resource.data.machineId)
+                        && request.resource.data.status == 'not_started'
+                        && request.resource.data.hoursApplied == false);
+      allow update: if isAdmin()
+                    || (isSiteManager()
+                        && resource.data.managerId == myUid()
+                        && resource.data.status != 'submitted'
+                        && resource.data.status != 'approved'
+                        && request.resource.data.status != 'approved'
+                        && request.resource.data.managerId == resource.data.managerId
+                        && request.resource.data.machineId == resource.data.machineId);
+      allow delete: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // maintenanceServiceEvents/{id}
+    // -----------------------------------------------------------------
+    match /maintenanceServiceEvents/{id} {
+      allow read: if isAdmin() || assignedToMachine(resource.data.machineId);
+      allow create: if isAdmin()
+                    || (isSiteManager()
+                        && assignedToMachine(request.resource.data.machineId)
+                        && request.resource.data.startedBy == myUid()
+                        && request.resource.data.status == 'in_progress');
+      allow update: if isAdmin()
+                    || (assignedToMachine(resource.data.machineId) && resource.data.status == 'in_progress');
+      allow delete: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // correctionRequests/{id} — Admin-only audit trail of manual
+    // hour-meter and approved-record corrections. Append-only.
+    // -----------------------------------------------------------------
+    match /correctionRequests/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.requestedBy == myUid();
+      allow update, delete: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // auditLogs/{id} — append-only trail written by both roles for
+    // their own actions. Never editable or deletable; readable by
+    // Admin only.
+    // -----------------------------------------------------------------
     match /auditLogs/{id} {
       allow read: if isAdmin();
-      allow create: if isActiveUser() && request.resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.actorId == myUid();
       allow update, delete: if false;
     }
 
-    // ------------------------------------------------------------
-    // settings — global config (rental defaults, milestone list).
-    // ------------------------------------------------------------
-    match /settings/{id} {
-      allow read: if isActiveUser();
-      allow write: if isAdmin();
-    }
-
-    // Default deny for anything not explicitly matched above.
+    // Deny everything else by default.
     match /{document=**} {
       allow read, write: if false;
     }
