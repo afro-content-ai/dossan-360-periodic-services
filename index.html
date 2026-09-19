@@ -300,6 +300,9 @@ textarea.input{ padding:var(--sp-3) var(--sp-4); min-height:88px; resize:vertica
 
 /* ---------------- Toast / banners ---------------- */
 .toast-wrap{ position:fixed; top:calc(env(safe-area-inset-top) + 10px); left:0; right:0; z-index:var(--z-toast); display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
+#busyBar{ position:fixed; top:0; left:0; right:0; height:3px; z-index:90; opacity:0; transition:opacity var(--dur-1); pointer-events:none; overflow:hidden; background:rgba(228,103,14,.18); }
+#busyBar::after{ content:""; position:absolute; top:0; bottom:0; width:40%; background:var(--c-orange); animation:busySweep 1.1s ease-in-out infinite; }
+@keyframes busySweep{ 0%{left:-40%} 100%{left:100%} }
 .toast{ background:var(--c-charcoal); color:#fff; padding:11px 18px; border-radius:var(--r-pill); font-size:13.5px; font-weight:600; box-shadow:var(--shadow-2); max-width:90vw; }
 .toast.success{ background:var(--c-green); }
 .toast.error{ background:var(--c-red); }
@@ -324,11 +327,11 @@ textarea.input{ padding:var(--sp-3) var(--sp-4); min-height:88px; resize:vertica
 @keyframes skel{ 0%{background-position:100% 0} 100%{background-position:0 0} }
 
 /* Login */
-.auth-wrap{ min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:var(--sp-6); max-width:420px; margin:0 auto; }
-.auth-sub{ font-size:14px; color:var(--c-ink-soft); margin-bottom:var(--sp-6); line-height:1.5; }
-.auth-brand{ margin-bottom:var(--sp-7); }
-.auth-brand-mark{ font-size:13px; font-weight:800; letter-spacing:.16em; color:var(--c-orange-600); text-transform:uppercase; margin-bottom:12px; }
-.auth-brand-tagline{ font-size:20px; font-weight:700; line-height:1.6; color:var(--c-ink); letter-spacing:-.005em; }
+.auth-wrap{ min-height:100vh; display:flex; flex-direction:column; justify-content:flex-start; padding:9vh var(--sp-6) var(--sp-6); max-width:480px; margin:0 auto; }
+.auth-sub{ font-size:14.5px; color:var(--c-ink-soft); margin-bottom:var(--sp-7); line-height:1.55; }
+.auth-brand{ margin-bottom:var(--sp-8); }
+.auth-brand-mark{ font-size:14px; font-weight:800; letter-spacing:.2em; color:var(--c-orange-600); text-transform:uppercase; margin-bottom:16px; }
+.auth-brand-tagline{ font-size:33px; font-weight:800; line-height:1.3; color:var(--c-ink); letter-spacing:-.015em; }
 .lang-switch{ display:flex; gap:6px; justify-content:center; margin-top:var(--sp-6); }
 .lang-switch button{ border:none;background:none; font-size:13px; font-weight:700; color:var(--c-ink-faint); padding:6px 10px; border-radius:var(--r-pill); }
 .lang-switch button[aria-current="true"]{ color:var(--c-orange); background:var(--c-orange-50); }
@@ -372,6 +375,7 @@ svg.ic{ width:20px;height:20px; stroke:currentColor; fill:none; stroke-width:2; 
 </div>
 <div id="overlays"></div>
 <div class="toast-wrap" id="toastWrap"></div>
+<div id="busyBar"></div>
 
 <script type="module">
 /* =====================================================================
@@ -490,8 +494,14 @@ function nowUtc(){ return new Date(); }
 /** Convert a real Date/Timestamp to the {y,m,d,h,min} it reads as in Addis. */
 function toAddisParts(dateInput){
   const d = dateInput instanceof Timestamp ? dateInput.toDate() : new Date(dateInput);
-  const utcMs = d.getTime() + d.getTimezoneOffset()*60000; // -> true UTC ms
-  const addisMs = utcMs + ADDIS_OFFSET_MIN*60000;
+  // d.getTime() is ALREADY an absolute UTC instant in JS — it must not be
+  // adjusted by the device's own local-timezone offset first. The old
+  // code added device-timezone offset AND the Addis offset, which only
+  // produced the right answer by coincidence on a device already set to
+  // UTC+3 and was wrong (off by exactly the device's own UTC offset) on
+  // every other device timezone — this was the "shows 05:04, real time
+  // is 08:04" bug.
+  const addisMs = d.getTime() + ADDIS_OFFSET_MIN*60000;
   const a = new Date(addisMs);
   return { y:a.getUTCFullYear(), mo:a.getUTCMonth(), d:a.getUTCDate(), h:a.getUTCHours(), min:a.getUTCMinutes(), sec:a.getUTCSeconds() };
 }
@@ -728,6 +738,7 @@ en: {
   workStartedAt:"Started at", whyStopped:"Why did the machine stop?", startNextSession:"Start next work session",
   workDoneForDay:"Work done for the day", confirmEndDay:"This will close today's log. You can still add items before submitting.",
   timelineTitle:"Today's timeline", noMachineToday:"No machine assigned to you yet",
+  continuingShift:"continuing an open shift",
   askAdminAssignYou:"Ask the Admin to assign you to a project and machine.",
   // stop reasons
   stopLunch:"Lunch", stopRest:"Rest", stopRefuel:"Refueling", stopRepair:"Repair",
@@ -770,6 +781,7 @@ en: {
   approvedOn:"Approved on", rejectedOn:"Rejected on", editBeforeApproving:"You can adjust values before approving.",
   resubmit:"Resubmit", correctAndResubmit:"Correct and resubmit", whoWhatWhen:"Who, what, when",
   workingHours:"Working hours", downtime:"Downtime", rentalAmount:"Rental amount", pendingLabel:"Pending",
+  downtimeBreakdown:"Downtime by reason",
   // reports
   reportDaily:"Daily", reportWeekly:"Weekly", reportProject:"Project", reportMachine:"Machine",
   totalHours:"Total hours", totalRevenue:"Total revenue",
@@ -842,6 +854,7 @@ ti: {
   workStartedAt:"ጀሚሩ ሰዓት", whyStopped:"ስለምንታይ ማሽን ደው በለ?", startNextSession:"ቀጻሊ ክፍለ ስራሕ ጀምር",
   workDoneForDay:"ናይ ሎሚ ስራሕ ተወዲኡ", confirmEndDay:"እዚ ናይ ሎሚ ምዝገባ ክዓጹ እዩ። ቅድሚ ምስዳድካ ኣቕሑት ክትውስኽ ትኽእል ኢኻ።",
   timelineTitle:"ናይ ሎሚ ጊዜ መስመር", noMachineToday:"ገና ማሽን ኣይተመደበልካን",
+  continuingShift:"ክፉት ናይ ስራሕ ግዜ ይቕጽል",
   askAdminAssignYou:"ኣመሓዳሪ ናብ ፕሮጀክትን ማሽንን ክምድበካ ሕተት።",
   stopLunch:"ምሳሕ", stopRest:"ዕረፍቲ", stopRefuel:"ነዳዲ ምምላእ", stopRepair:"ጽገና",
   stopMaintenance:"ጽገና (ናይ ግዜ)", stopBreakdown:"ብልሽት", stopWeather:"ኩነታት ኣየር",
@@ -879,6 +892,7 @@ ti: {
   approvedOn:"ጸዲቑ ብ", rejectedOn:"ተነጺጉ ብ", editBeforeApproving:"ቅድሚ ምጽዳቕካ ክትቕይሮ ትኽእል ኢኻ።",
   resubmit:"ደጊምካ ላኣኽ", correctAndResubmit:"ኣርም ደጊምካ ላኣኽ", whoWhatWhen:"መን፣ እንታይ፣ መዓስ",
   workingHours:"ናይ ስራሕ ሰዓታት", downtime:"ደው ዝበለ ግዜ", rentalAmount:"ናይ ክራይ መጠን", pendingLabel:"ተጸቢዩ ዘሎ",
+  downtimeBreakdown:"ደው ዝበለ ግዜ ብምኽንያት",
   reportDaily:"መዓልታዊ", reportWeekly:"ሰሙናዊ", reportProject:"ፕሮጀክት", reportMachine:"ማሽን",
   totalHours:"ጠቕላላ ሰዓታት", totalRevenue:"ጠቕላላ እቶት",
   online:"ኦንላይን", offline:"ኦፍላይን — ብዘይ ኢንተርነት ይሰርሕ ኣሎ", syncing:"ይሳነ ኣሎ…", savedLocally:"ኣብ ተሌፎንካ ተዓቂቡ — ኢንተርነት ምስ ተመልሰ ክሳነ እዩ።",
@@ -1051,6 +1065,7 @@ const S = {
 
   overlayStack: [],       // rendered bottom sheets / dialogs
   toasts: [],
+  _busy: false,           // true while a write action is in flight (blocks double-taps)
 
   _unsubs: [],
 };
@@ -1275,8 +1290,25 @@ function blankDailyLog(projectId, machineId, managerId, date){
     createdAt:serverTimestamp(), updatedAt:serverTimestamp(),
   };
 }
+/** Resolves the log the Site Manager should see as "current". A work
+    period that's still open (not yet marked "done for the day") is
+    resumed regardless of which calendar date it was started on — this
+    is what makes a night shift that crosses midnight, or a phone that
+    was closed/offline overnight, pick back up correctly instead of the
+    open session being silently abandoned under a fresh blank log for
+    the new day (which is what used to make it look like "work stopped
+    by itself"). Only once a log reaches day_complete/submitted/
+    approved/rejected do we start looking for — or create — today's. */
 async function ensureTodayLog(projectId, machineId){
   const managerId = S.profile.uid;
+  const OPEN_STATUSES = ['not_started','working','break','repair'];
+  const recentQy = query(collection(db,'dailyLogs'),
+    where('machineId','==',machineId), where('managerId','==',managerId),
+    orderBy('date','desc'), qLimit(5));
+  const recentSnap = await getDocs(recentQy);
+  const openDoc = recentSnap.docs.find(d => OPEN_STATUSES.includes(d.data().status));
+  if (openDoc) return { id: openDoc.id, ...openDoc.data() };
+
   const date = addisDateId();
   const qy = query(collection(db,'dailyLogs'),
     where('machineId','==',machineId), where('managerId','==',managerId), where('date','==',date), qLimit(1));
@@ -1776,8 +1808,22 @@ document.addEventListener('click', (e)=>{
   const action = el.dataset.action;
   if (action === 'overlayBackdrop') return;
   const handler = ACTIONS[action];
-  if (handler){ handler(el.dataset, e); }
+  if (!handler) return;
+  // Guard against double-writes: while a previous action that writes to
+  // Firestore is still in flight, ignore further taps entirely (rather
+  // than letting five rapid taps on "Create" fire five creates before
+  // the first one's network round-trip even returns).
+  if (S._busy) return;
+  const result = handler(el.dataset, e);
+  if (result && typeof result.then === 'function'){
+    S._busy = true; setBusyUI(true);
+    result.catch((err)=>{ console.error(err); }).finally(()=>{ S._busy = false; setBusyUI(false); });
+  }
 });
+function setBusyUI(on){
+  const bar = document.getElementById('busyBar');
+  if (bar) bar.style.opacity = on ? '1' : '0';
+}
 document.addEventListener('input', (e)=>{
   const el = e.target.closest('[data-draft]');
   if (!el) return;
@@ -1859,8 +1905,10 @@ Object.assign(ACTIONS, {
 function screenBootstrap(){
   const err = DRAFT._bsErr;
   return `<div class="auth-wrap">
-    <div class="auth-mark">${ic('truck')}</div>
-    <div class="auth-title">${escapeHtml(t('bootstrapTitle'))}</div>
+    <div class="auth-brand">
+      <div class="auth-brand-mark">MTM</div>
+      <div class="auth-brand-tagline" style="font-size:26px">${escapeHtml(t('bootstrapTitle'))}</div>
+    </div>
     <div class="auth-sub">${escapeHtml(t('bootstrapSub'))}</div>
     <div class="field"><label>${escapeHtml(t('fullName'))}</label>
       <input class="input" data-draft="bsName" value="${escapeHtml(DRAFT.bsName||'')}"></div>
@@ -1927,10 +1975,13 @@ function screenToday(){
   </div>`;
 }
 function topHeaderToday(){
+  const log = S.todayLog;
+  const shownDate = log ? log.date : addisDateId();
+  const isPastDate = shownDate !== addisDateId();
   return `<div class="row between" style="padding-top:4px;margin-bottom:6px">
     <div>
       <div style="font-size:22px;font-weight:800">${escapeHtml(t('todayTitle'))}</div>
-      <div class="small muted">${escapeHtml(formatDateHuman(addisDateId()))}</div>
+      <div class="small muted">${escapeHtml(formatDateHuman(shownDate))}${isPastDate ? ' · '+escapeHtml(t('continuingShift')) : ''}</div>
     </div>
     <div class="avatar">${escapeHtml((S.profile.name||'?').trim()[0]||'?')}</div>
   </div>`;
@@ -1978,7 +2029,7 @@ function todayStateCard(m, log, proj){
     <div class="row between">
       <div>
         <div style="font-weight:800;font-size:17px">${escapeHtml(m.assetNumber)}</div>
-        <div class="small muted">${escapeHtml(m.model||'DX360LCA-7M')}${proj?(' · '+escapeHtml(proj.name)):''}</div>
+        <div class="small muted">${escapeHtml(m.model||'DX340LCA-7M')}${proj?(' · '+escapeHtml(proj.name)):''}</div>
       </div>
       ${machineStatusPill(m.status)}
     </div>
@@ -2286,7 +2337,7 @@ function maintenanceHeaderCard(m, evals){
     <div class="row between">
       <div>
         <div style="font-weight:800;font-size:17px">${escapeHtml(m.assetNumber)}</div>
-        <div class="small muted">${escapeHtml(m.model||'DX360LCA-7M')}</div>
+        <div class="small muted">${escapeHtml(m.model||'DX340LCA-7M')}</div>
       </div>
       <div class="metric" style="align-items:flex-end">
         <div class="lb">${escapeHtml(t('dashHourMeter'))}</div>
@@ -2562,6 +2613,14 @@ function logDetailBody(log, opts={}){
   (log.sessions||[]).forEach(s=> events.push({t:toJsDate(s.start), kind:'work', label:t('st_working'), dur:s.durationMin}));
   (log.stops||[]).forEach(s=> events.push({t:toJsDate(s.start), kind: s.type==='day_end'?'end':(stopTypeDef(s.type).isRepair?'repair':'stop'), label:stopLabel(s.type), dur:s.durationMin}));
   events.sort((a,b)=>a.t-b.t);
+  const downtimeByType = {};
+  (log.stops||[]).filter(s=>s.type!=='day_end').forEach(s=>{
+    downtimeByType[s.type] = (downtimeByType[s.type]||0) + (s.durationMin||0);
+  });
+  const downtimeBreakdown = Object.keys(downtimeByType)
+    .sort((a,b)=>downtimeByType[b]-downtimeByType[a])
+    .map(type=>`<div class="row between" style="padding:6px 0"><div class="small">${escapeHtml(stopLabel(type))}</div><div class="small num" style="font-weight:700">${fmtHM(downtimeByType[type])}</div></div>`)
+    .join('');
 
   return `
     <div class="card">
@@ -2576,6 +2635,7 @@ function logDetailBody(log, opts={}){
         <div class="metric"><div class="lb">${escapeHtml(t('downtime'))}</div><div class="val num">${fmtHM(totals.totalDowntimeMinutes)}</div></div>
         <div class="metric"><div class="lb">${escapeHtml(t('rentalAmount'))}</div><div class="val num">${log.status==='approved'?fmtBirr(rentalAmt):('<span class="pill pill-neutral">'+escapeHtml(t('pendingLabel'))+'</span>')}</div></div>
       </div>
+      ${downtimeBreakdown ? `<div class="divider"></div><div class="small muted mb-2" style="font-weight:700">${escapeHtml(t('downtimeBreakdown'))}</div>${downtimeBreakdown}` : ''}
     </div>
     <div class="section">
       <div class="section-title mb-2">${escapeHtml(t('timelineTitle')).toUpperCase()}</div>
@@ -3259,7 +3319,7 @@ Object.assign(ACTIONS, {
    ===================================================================== */
 Object.assign(ACTIONS, {
   openCreateMachine: (ds)=>{
-    DRAFT._mach = { assetNumber:'', model:'DX360LCA-7M', serialNumber:'', initialHourMeter:0, projectId: S.activeProjectId||'', rentalRatePerHour:0 };
+    DRAFT._mach = { assetNumber:'', model:'DX340LCA-7M', serialNumber:'', initialHourMeter:0, projectId: S.activeProjectId||'', rentalRatePerHour:0 };
     DRAFT._machStep = 1;
     openSheet('createMachine');
   },
@@ -3275,8 +3335,8 @@ OVERLAYS.createMachine = function(){
         <input class="input" placeholder="DX360-01" data-draft="_mach.assetNumber" value="${escapeHtml(d.assetNumber)}"></div>
       <div class="field"><label>${escapeHtml(t('model'))}</label>
         <select class="select" data-draft="_mach.model">
-          <option value="DX360LCA-7M" ${d.model==='DX360LCA-7M'?'selected':''}>DX360LCA-7M</option>
-          <option value="DX360LC-7M" ${d.model==='DX360LC-7M'?'selected':''}>DX360LC-7M</option>
+          <option value="DX340LCA-7M" ${d.model==='DX340LCA-7M'?'selected':''}>DX340LCA-7M</option>
+          <option value="DX340LC-7M" ${d.model==='DX340LC-7M'?'selected':''}>DX340LC-7M</option>
         </select></div>
       <div class="field"><label>${escapeHtml(t('serialNumber'))} (${escapeHtml(t('optional'))})</label>
         <input class="input" data-draft="_mach.serialNumber" value="${escapeHtml(d.serialNumber)}"></div>

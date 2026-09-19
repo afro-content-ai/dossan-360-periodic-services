@@ -8,7 +8,7 @@
    makes sure the app itself can still launch with no connection.
    ===================================================================== */
 
-const CACHE_VERSION = 'd340-shell-v2';
+const CACHE_VERSION = 'd340-shell-v3';
 const APP_SHELL = [
   './',
   './index.html',
