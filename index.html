@@ -110,7 +110,7 @@ button:focus-visible, .tap:focus-visible{ outline:2px solid var(--c-orange); out
 /* ---------------- App shell ---------------- */
 #app{ min-height:100%; display:flex; flex-direction:column; }
 .screen{ flex:1; width:100%; max-width:640px; margin:0 auto; padding:var(--sp-4) var(--sp-4) calc(var(--nav-h) + var(--sp-6)); }
-.screen.no-nav-pad{ padding-bottom:var(--sp-6); }
+.screen.no-nav-pad{ padding-bottom:calc(var(--nav-h) + var(--sp-6)); } /* bottom nav is always present, even on subviews — this must match .screen's own bottom padding, never less */
 .screen-wide{ max-width:880px; }
 
 .topbar{
@@ -1075,6 +1075,13 @@ function toast(msg, kind=''){
   S.toasts.push({id, msg, kind});
   renderToasts();
   setTimeout(()=>{ S.toasts = S.toasts.filter(x=>x.id!==id); renderToasts(); }, 3200);
+}
+/** Confirms a save in a way that's honest about whether it actually
+    reached the server yet or is only queued locally — used after every
+    Site Manager write so offline recording feels as trustworthy as
+    online recording, not just silently the same. */
+function saveToast(){
+  toast(S.online ? t('saved') : t('savedLocally'), S.online ? 'success' : '');
 }
 function openSheet(view, params={}){ S.overlayStack.push({mode:'sheet', view, params}); renderOverlays(); }
 function openDialog(view, params={}){ S.overlayStack.push({mode:'dialog', view, params}); renderOverlays(); }
@@ -2135,6 +2142,7 @@ Object.assign(ACTIONS, {
   startWorkClick: async ()=>{
     if (!S.todayLog){ toast(t('errUnexpected'),'error'); return; }
     await logStartWork(S.todayLog.id);
+    saveToast();
   },
   stopWorkClick: ()=>{
     DRAFT._stopType = null; DRAFT._stopNotes=''; DRAFT._repair = {};
@@ -2143,12 +2151,16 @@ Object.assign(ACTIONS, {
   resumeWorkClick: async ()=>{
     if (!S.todayLog) return;
     await logResumeWork(S.todayLog.id);
+    saveToast();
   },
   submitReportClick: ()=>{ openDialog('confirmSubmit'); },
   resubmitClick: async ()=>{ await resubmitDailyLog(S.todayLog.id); },
   confirmSubmitYes: async ()=>{
     closeOverlay();
-    try{ await submitDailyLog(S.todayLog.id); toast(t('submitted'),'success'); }
+    try{
+      await submitDailyLog(S.todayLog.id);
+      toast(S.online ? t('submitted') : t('savedLocally'), S.online ? 'success' : '');
+    }
     catch(e){ toast(mapFirebaseError(e),'error'); }
   },
 });
@@ -2204,7 +2216,7 @@ Object.assign(ACTIONS, {
       };
     }
     closeOverlay();
-    try{ await logStopWork(S.todayLog.id, type, notes, repairDetail); }
+    try{ await logStopWork(S.todayLog.id, type, notes, repairDetail); saveToast(); }
     catch(e){ toast(mapFirebaseError(e),'error'); }
   },
 });
@@ -2293,6 +2305,7 @@ Object.assign(ACTIONS, {
     try{
       if (DRAFT._addItemTarget === 'service'){ await addServiceEventItem(DRAFT._serviceEventId, payload); }
       else { await logAddItem(S.todayLog.id, payload); }
+      saveToast();
     }catch(e){ toast(mapFirebaseError(e),'error'); }
   },
 });
@@ -3017,12 +3030,29 @@ OVERLAYS.rejectReason = function(){
   const foot = `<button class="btn btn-danger btn-lg" data-action="confirmReject">${escapeHtml(t('reject'))}</button>`;
   return { title:t('reject'), body, foot };
 };
+/** Keep S.pendingLogs / S.historyLogs consistent with a write we just
+    made ourselves, instead of waiting on listener propagation — this is
+    what makes approve/reject reflect on screen the instant the write
+    succeeds, rather than only after a manual reload. */
+function applyLocalLogUpdate(id, patch){
+  let updated = null;
+  const idx = S.pendingLogs.findIndex(l=>l.id===id);
+  if (idx>=0){ updated = { ...S.pendingLogs[idx], ...patch }; S.pendingLogs.splice(idx,1); }
+  const hIdx = S.historyLogs.findIndex(l=>l.id===id);
+  if (hIdx>=0){ S.historyLogs[hIdx] = { ...S.historyLogs[hIdx], ...patch }; }
+  else if (updated){ S.historyLogs.unshift(updated); }
+}
 Object.assign(ACTIONS, {
   confirmReject: async ()=>{
     const reason = (DRAFT._rejReason||'').trim();
     if (!reason){ toast(t('errRequired'),'error'); return; }
+    const id = DRAFT._rejId;
     closeOverlay();
-    try{ await rejectDailyLog(DRAFT._rejId, reason); toast(t('rejected'),'success'); popView(); render(); }
+    try{
+      await rejectDailyLog(id, reason);
+      applyLocalLogUpdate(id, { status:'rejected', rejectionReason:reason });
+      toast(t('rejected'),'success'); popView(); render();
+    }
     catch(e){ toast(mapFirebaseError(e),'error'); }
   },
 });
@@ -3048,6 +3078,7 @@ Object.assign(ACTIONS, {
         const m = S.machines.find(x=>x.id===log.machineId);
         if (m){ m.lifetimeHours = round2((m.lifetimeHours||0) + (log.totalWorkingMinutes||0)/60); }
       }
+      applyLocalLogUpdate(id, { status:'approved', approvedAt:new Date(), approvedBy:S.profile.uid, hoursApplied:true });
       toast(t('approved'),'success'); popView(); render();
     }catch(e){ toast(mapFirebaseError(e),'error'); }
   },
