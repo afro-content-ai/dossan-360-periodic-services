@@ -471,6 +471,7 @@ function fmtHM(totalMinutes){
 
 function mapFirebaseError(err){
   const code = (err && err.code) || "";
+  if (err && err.message === 'open-session') return t('errOpenSession');
   if (code.includes("wrong-password") || code.includes("invalid-credential")) return t('errWrongPassword');
   if (code.includes("user-not-found")) return t('errUserNotFound');
   if (code.includes("too-many-requests")) return t('errTooManyRequests');
@@ -703,7 +704,7 @@ en: {
   // dashboard
   dashPendingApprovals:"Pending approvals", dashMachineHealth:"Machine", dashTodayHours:"Today's hours",
   dashRentalValue:"Today's rental value", dashMaintenanceStatus:"Maintenance", dashAlerts:"Alerts",
-  dashRecentActivity:"Recent activity", dashNoPending:"Nothing waiting on you",
+  dashRecentActivity:"Recent activity", dashNoPending:"Nothing waiting on you", dashMaintOk:"All machines are up to date",
   dashHourMeter:"Hour meter", dashLifetimeHours:"Lifetime hours", dashCurrentStatus:"Status",
   switchProject:"Switch project", noProjectsYet:"No projects yet",
   // project
@@ -763,7 +764,7 @@ en: {
   // maintenance
   maintenanceTitle:"Maintenance", serviceHealth:"Service health", nextService:"Next service",
   hoursRemaining:"remaining", overdueBy:"Overdue by", dueIn:"Due in", dueNow:"Due now",
-  m_upcoming:"Upcoming", m_due:"Due", m_overdue:"Overdue", m_completed:"Completed", m_none:"—",
+  m_upcoming:"Upcoming", m_due:"Due", m_overdue:"Overdue", m_completed:"Completed", m_none:"—", m_legacy:"Not tracked",
   serviceEvent:"Service event", startService:"Start service", completeService:"Complete service",
   viewServicePlan:"View service plan", serviceHistory:"Service history", whatIsDue:"What's due",
   whatWasCompleted:"Completed", taskDone:"Done", taskNotDone:"Not done", taskNA:"Not applicable",
@@ -795,6 +796,8 @@ en: {
   errPhoneInUse:"That phone number already has an account.", errWeakPassword:"Password must be at least 6 characters.",
   errNetwork:"Connection problem. Check your internet and try again.", errOffline:"You're offline right now.",
   errUnexpected:"Something went wrong. Please try again.", errRequired:"This field is required.",
+  errOpenSession:"A session or stop is still running — stop or resume it before submitting.",
+  longRunningWarning:"This has been running a long time — if you forgot to stop it earlier, stop it now so the hours stay accurate.",
   errInvalidPhone:"Enter a valid Ethiopian phone number (e.g. 0912345678).",
   // empty states
   emptyNoPending:"No pending approvals", emptyNoPendingSub:"Submitted daily reports will show up here for review.",
@@ -823,7 +826,7 @@ ti: {
   roleAdmin:"ኣመሓዳሪ", roleSiteManager:"ሓላፊ ሳይት",
   dashPendingApprovals:"ናይ ምጽዳቕ ተጸቢዩ ዘሎ", dashMachineHealth:"ማሽን", dashTodayHours:"ናይ ሎሚ ሰዓታት",
   dashRentalValue:"ናይ ሎሚ ክራይ", dashMaintenanceStatus:"ጽገና", dashAlerts:"መጠንቀቕታታት",
-  dashRecentActivity:"ናይ ቀረባ እዋን ንጥፈት", dashNoPending:"ዝጽበየካ ነገር የለን",
+  dashRecentActivity:"ናይ ቀረባ እዋን ንጥፈት", dashNoPending:"ዝጽበየካ ነገር የለን", dashMaintOk:"ኩሎም ማሽናት ጽገናኦም ወቅታዊ እዩ",
   dashHourMeter:"ናይ ሰዓት መለክዒ", dashLifetimeHours:"ጠቕላላ ናይ ስራሕ ሰዓታት", dashCurrentStatus:"ኩነታት",
   switchProject:"ፕሮጀክት ቀይር", noProjectsYet:"ክሳብ ሕጂ ፕሮጀክት የለን",
   project:"ፕሮጀክት", projects:"ፕሮጀክታት", createProject:"ፕሮጀክት ፍጠር", projectName:"ስም ፕሮጀክት",
@@ -875,7 +878,7 @@ ti: {
   itemsAndCosts:"ኣቕሑትን ወጻኢትን", noItemsYet:"ገና ኣቕሓ ኣይተመዝገበን",
   maintenanceTitle:"ጽገና", serviceHealth:"ኩነታት ጽገና", nextService:"ቀጻሊ ጽገና",
   hoursRemaining:"ተሪፉ", overdueBy:"ዝሓለፎ", dueIn:"ኣብ", dueNow:"ሕጂ ይግባእ",
-  m_upcoming:"ዝመጽእ", m_due:"ይግባእ", m_overdue:"ዝሓለፎ", m_completed:"ተወዲኡ", m_none:"—",
+  m_upcoming:"ዝመጽእ", m_due:"ይግባእ", m_overdue:"ዝሓለፎ", m_completed:"ተወዲኡ", m_none:"—", m_legacy:"ኣይተኸታተለን",
   serviceEvent:"ናይ ጽገና ፍጻመ", startService:"ጽገና ጀምር", completeService:"ጽገና ወድእ",
   viewServicePlan:"ናይ ጽገና መደብ ርአ", serviceHistory:"ታሪኽ ጽገና", whatIsDue:"እንታይ ይግባእ",
   whatWasCompleted:"ዝተወደአ", taskDone:"ተወዲኡ", taskNotDone:"ኣይተወደአን", taskNA:"ኣየገድስን",
@@ -903,6 +906,8 @@ ti: {
   errPhoneInUse:"እዚ ቁጽሪ ስልኪ ኣቐዲሙ ኣካውንት ኣለዎ።", errWeakPassword:"ፓስወርድ ልዕሊ 6 ፊደላት ክኸውን ኣለዎ።",
   errNetwork:"ናይ ኢንተርነት ጸገም። ኢንተርነትካ ረኣይ ደጊምካ ፈትን።", errOffline:"ሕጂ ኦፍላይን ኢኻ ዘለኻ።",
   errUnexpected:"ጸገም ኣጋጢሙ። በጃኻ ደጊምካ ፈትን።", errRequired:"እዚ ክፍሊ ኣገዳሲ እዩ።",
+  errOpenSession:"ክፍለ ስራሕ ወይ ደው ምባል ገና ይኸይድ ኣሎ — ቅድሚ ምስዳድካ ኣቋርጾ ወይ ቀጽሎ።",
+  longRunningWarning:"እዚ ንነዊሕ ግዜ ይኸይድ ኣሎ — ቅድሚ ሕጂ ከተቋርጾ ረሲዕካ እንተኾንካ፣ ሰዓታት ልክዕ ንኽኸውን ሕጂ ኣቋርጾ።",
   errInvalidPhone:"ቅኑዕ ናይ ኢትዮጵያ ቁጽሪ ስልኪ ኣእቱ (ንኣብነት 0912345678)።",
   emptyNoPending:"ናይ ምጽዳቕ ተጸቢዩ ዘሎ የለን", emptyNoPendingSub:"እተላእኹ መዓልታዊ ጸብጻባት ኣብዚ ክርኣዩ እዮም።",
   emptyNoHistory:"ገና ታሪኽ የለን", emptyNoHistorySub:"እተላእኹ መዓልታዊ ምዝገባታት ኣብዚ ክርኣዩ እዮም።",
@@ -951,20 +956,41 @@ function maintStatusFromRemaining(remaining, interval){
 /** Evaluate one rule against current hours + completion state.
     Returns null when the rule does not currently apply (inactive
     break-in past 100h, or a conditional whose condition is off). */
-function evalMaintRule(item, rule, currentHours, maintState, machineConditions){
+/** currentHours is the machine's live hour meter; baselineHours is the
+    hour meter it had when it was ADDED to the app (machine.initialHourMeter).
+    When there's no completion history for a rule (last == null), the
+    baseline — not zero, and not the ever-growing currentHours — is what
+    "no history yet" is measured from. Using zero would make a machine
+    added at, say, 7500h show every recurring item as "overdue by
+    thousands of hours" the moment it's created (nonsense: we simply have
+    no record of its service history before it joined this app). Using
+    currentHours instead of a fixed baseline would be a worse bug: since
+    currentHours keeps climbing, nextDue would forever stay just ahead of
+    it and the rule would never become due at all. */
+function evalMaintRule(item, rule, currentHours, maintState, machineConditions, baselineHours){
   const key = maintRuleKey(item.id, rule);
   const last = maintState && maintState[key] ? maintState[key].lastCompletedHours : null;
+  const base0 = baselineHours || 0;
 
   if (rule.kind === RULE_KIND.FIRST){
     if (last != null){
       return { key, item, rule, dueAtHours: rule.tier, status:'completed', recurring:false, lastCompletedHours:last };
+    }
+    if (base0 >= rule.tier){
+      // Machine already had more hours than this one-time threshold when
+      // it was added — we have no record either way, so rather than a
+      // permanent, unfixable "overdue by thousands of hours" for a
+      // break-in step that's long past relevant, mark it outside this
+      // app's tracking window instead of alarming anyone about it.
+      return { key, item, rule, dueAtHours: rule.tier, status:'legacy', recurring:false, lastCompletedHours:null };
     }
     const remaining = rule.tier - currentHours;
     return { key, item, rule, dueAtHours: rule.tier, status: maintStatusFromRemaining(remaining, rule.tier), recurring:false, lastCompletedHours:null };
   }
   if (rule.kind === RULE_KIND.RECUR){
     const interval = rule.tier;
-    const nextDue = last == null ? interval : (Math.floor(last/interval)+1)*interval;
+    const base = last ?? base0;
+    const nextDue = (Math.floor(base/interval)+1)*interval;
     const remaining = nextDue - currentHours;
     return { key, item, rule, dueAtHours: nextDue, status: maintStatusFromRemaining(remaining, interval), recurring:true, lastCompletedHours:last };
   }
@@ -973,7 +999,8 @@ function evalMaintRule(item, rule, currentHours, maintState, machineConditions){
       return null; // break-in window has closed — no longer part of the active engine
     }
     const interval = rule.intervalHours;
-    const rawNext = last == null ? interval : (Math.floor(last/interval)+1)*interval;
+    const base = last ?? base0;
+    const rawNext = (Math.floor(base/interval)+1)*interval;
     const nextDue = Math.min(rawNext, rule.until);
     const remaining = nextDue - currentHours;
     return { key, item, rule, dueAtHours: nextDue, status: maintStatusFromRemaining(remaining, interval), recurring:true, breakIn:true, lastCompletedHours:last };
@@ -982,7 +1009,8 @@ function evalMaintRule(item, rule, currentHours, maintState, machineConditions){
     const on = !!(machineConditions && machineConditions[rule.condition]);
     if (!on) return null;
     const interval = rule.intervalHours;
-    const nextDue = last == null ? interval : (Math.floor(last/interval)+1)*interval;
+    const base = last ?? base0;
+    const nextDue = (Math.floor(base/interval)+1)*interval;
     const remaining = nextDue - currentHours;
     return { key, item, rule, dueAtHours: nextDue, status: maintStatusFromRemaining(remaining, interval), recurring:true, conditional:true, lastCompletedHours:last };
   }
@@ -993,10 +1021,11 @@ function evalMaintRule(item, rule, currentHours, maintState, machineConditions){
 function evaluateMachineMaintenance(machine, currentHours){
   const maintState = machine.maintState || {};
   const cond = machine.operatingConditions || {};
+  const baselineHours = Number(machine.initialHourMeter)||0;
   const out = [];
   for (const item of MAINTENANCE_ITEMS){
     for (const rule of item.rules){
-      const ev = evalMaintRule(item, rule, currentHours, maintState, cond);
+      const ev = evalMaintRule(item, rule, currentHours, maintState, cond, baselineHours);
       if (ev) out.push(ev);
     }
   }
@@ -1344,15 +1373,27 @@ async function logStopWork(logId, stopType, notes, repairDetail){
   const snap = await getDoc(ref); const log = snap.data();
   const now = Timestamp.now();
   let sessions = [...(log.sessions||[])];
+  let stops = [...(log.stops||[])];
   const openSess = sessions.find(s=>!s.end);
   if (openSess){
     openSess.end = now;
     openSess.durationMin = minutesBetween(toJsDate(openSess.start), toJsDate(now));
   }
+  // If an earlier break/repair/etc. is still open (e.g. the manager taps
+  // "Stop Work" again — to change the reason, or to end the day — while
+  // already on a break, without resuming first), it must be closed here
+  // too. Left open, it would stay open forever and permanently block
+  // submitDailyLog()'s "no open session/stop" check below — this was a
+  // real submission-blocking bug, not just a hypothetical one.
+  const openStopEntry = stops.find(s=>!s.end);
+  if (openStopEntry){
+    openStopEntry.end = now;
+    openStopEntry.durationMin = minutesBetween(toJsDate(openStopEntry.start), toJsDate(now));
+  }
   const def = stopTypeDef(stopType);
-  const stops = [...(log.stops||[]), {
+  stops = [...stops, {
     id:genLocalId(), type:stopType, start:now, end: def.endsDay?now:null,
-    durationMin: def.endsDay?0:0, notes: notes||'',
+    durationMin: 0, notes: notes||'',
     repairDetail: def.isRepair ? (repairDetail||{}) : null,
   }];
   const totals = computeLogTotals({sessions, stops});
@@ -1760,16 +1801,31 @@ function renderSubView(v){
 }
 const SUBVIEWS = {}; // view-name -> (params) => {title, body}
 
+/** Total maintenance items currently due or overdue across every machine
+    the signed-in user can see (all machines for Admin, assigned machines
+    for a Site Manager) — drives the badge on the Maintenance tab so this
+    surfaces the moment the app is opened, without anyone having to
+    remember to go check. */
+function totalDueMaintenanceCount(){
+  let n = 0;
+  for (const m of S.machines){
+    n += dueAndOverdue(evaluateMachineMaintenance(m, m.lifetimeHours)).length;
+  }
+  return n;
+}
 function bottomNav(){
   const isAdmin = S.profile.role === 'admin';
   const items = isAdmin
     ? [['today','home',t('navHome')],['maintenance','wrench',t('navMaintenance')],['history','fileText',t('navLogs')],['more','more',t('navMore')]]
     : [['today','today',t('navToday')],['maintenance','wrench',t('navMaintenance')],['history','clock',t('navHistory')],['more','more',t('navMore')]];
   const pendingCount = S.pendingLogs.length;
+  const dueCount = totalDueMaintenanceCount();
   return `<nav class="bottom-nav">
     ${items.map(([route,icon,label])=>{
       const current = S.route===route && !(S.sub&&S.sub.length);
-      const badge = (route==='today' && isAdmin && pendingCount>0) ? `<span class="badge" style="position:absolute;margin-left:14px;margin-top:-16px">${pendingCount}</span>` : '';
+      let badge = '';
+      if (route==='today' && isAdmin && pendingCount>0) badge = `<span class="badge" style="position:absolute;margin-left:14px;margin-top:-16px">${pendingCount}</span>`;
+      if (route==='maintenance' && dueCount>0) badge = `<span class="badge" style="position:absolute;margin-left:14px;margin-top:-16px;background:var(--c-amber)">${dueCount}</span>`;
       return `<button class="nav-item" aria-current="${current}" data-action="nav" data-route="${route}">
         ${badge}${ic(icon)}<span class="lb">${escapeHtml(label)}</span>
       </button>`;
@@ -1951,6 +2007,27 @@ setInterval(()=>{ if (S.profile && S.profile.role!=='admin' && S.route==='today'
 function activeMachine(){ return S.machines.find(x=>x.id===S.activeMachineId) || null; }
 function activeProjectOf(m){ return m ? S.projects.find(x=>x.id===m.projectId) : null; }
 
+function managerMaintenanceBanner(m){
+  const evals = evaluateMachineMaintenance(m, m.lifetimeHours);
+  const list = dueAndOverdue(evals);
+  if (!list.length) return '';
+  const overdue = list.filter(e=>e.status==='overdue').length;
+  const due = list.length - overdue;
+  return `<div class="section">
+    <div class="card tap" data-action="nav" data-route="maintenance" style="background:${overdue?'var(--c-red-100)':'var(--c-amber-100)'};border-color:transparent">
+      <div class="row gap-3">
+        ${ic('wrench')}
+        <div class="main">
+          <div style="font-weight:800;color:${overdue?'var(--c-red)':'#8A5C09'}">
+            ${overdue ? `${overdue} ${escapeHtml(t('m_overdue'))}` : `${due} ${escapeHtml(t('m_due'))}`}
+          </div>
+          <div class="small" style="color:${overdue?'var(--c-red)':'#8A5C09'}">${escapeHtml(list[0].item.item)}${list.length>1?` +${list.length-1}`:''}</div>
+        </div>
+        ${ic('chevronRight')}
+      </div>
+    </div>
+  </div>`;
+}
 function screenToday(){
   const m = activeMachine();
   if (!m){
@@ -1968,6 +2045,7 @@ function screenToday(){
     <div class="section">
       ${todayStateCard(m, log, proj)}
     </div>
+    ${managerMaintenanceBanner(m)}
     <div class="section">
       <div class="section-head"><div class="section-title">${escapeHtml(t('timelineTitle')).toUpperCase()}</div></div>
       ${todayTimeline(log)}
@@ -2023,13 +2101,21 @@ function todayStateCard(m, log, proj){
   const totals = log ? computeLogTotals(log) : {totalWorkingMinutes:0,totalDowntimeMinutes:0};
   const openSess = log && openSessionOf(log);
   const openStop = log && openStopOf(log);
+  const LONG_RUNNING_HOURS = 18; // soft sanity threshold — real overnight shifts can run long, but this catches "forgot to stop for days"
   let sessionInfo = '';
+  let longRunningWarning = '';
   if (openSess){
     const elapsed = minutesBetween(toJsDate(openSess.start), new Date());
     sessionInfo = `<div class="small muted mt-2">${escapeHtml(t('workStartedAt'))} ${addisTimeLabel(toJsDate(openSess.start))} · ${escapeHtml(t('currentSession'))} ${fmtHM(elapsed)}</div>`;
+    if (elapsed > LONG_RUNNING_HOURS*60){
+      longRunningWarning = `<div class="info-box warn mt-3">${ic('alert')}<div>${escapeHtml(t('longRunningWarning'))}</div></div>`;
+    }
   } else if (openStop){
     const elapsed = minutesBetween(toJsDate(openStop.start), new Date());
     sessionInfo = `<div class="small muted mt-2">${escapeHtml(stopLabel(openStop.type))} · ${fmtHM(elapsed)}</div>`;
+    if (elapsed > LONG_RUNNING_HOURS*60){
+      longRunningWarning = `<div class="info-box warn mt-3">${ic('alert')}<div>${escapeHtml(t('longRunningWarning'))}</div></div>`;
+    }
   }
   const status = log ? log.status : 'not_started';
   return `<div class="card">
@@ -2049,6 +2135,7 @@ function todayStateCard(m, log, proj){
       <div>${logStatusPill(status)}</div>
     </div>
     ${sessionInfo}
+    ${longRunningWarning}
     <div class="mt-4">${todayPrimaryAction(log, status)}</div>
   </div>`;
 }
@@ -2334,7 +2421,7 @@ function healthStrip(evals){
   </div>`;
 }
 function statusPillFor(status){
-  const map = { upcoming:['neutral',t('m_upcoming')], due:['amber',t('m_due')], overdue:['red',t('m_overdue')], completed:['green',t('m_completed')] };
+  const map = { upcoming:['neutral',t('m_upcoming')], due:['amber',t('m_due')], overdue:['red',t('m_overdue')], completed:['green',t('m_completed')], legacy:['neutral',t('m_legacy')] };
   const [c,l] = map[status]||['neutral',status];
   return `<span class="pill pill-${c}"><span class="dot"></span>${escapeHtml(l)}</span>`;
 }
@@ -2773,6 +2860,9 @@ function screenAdminHome(){
         }).join('')}</div>`}
     </div>
     <div class="section">
+      ${adminMaintenanceAlertCard(machines)}
+    </div>
+    <div class="section">
       <div class="section-head"><div class="section-title">${escapeHtml(t('machines')).toUpperCase()}</div>
         <button class="section-action" data-action="openCreateMachine">+ ${escapeHtml(t('createMachine'))}</button></div>
       ${!machines.length ? `<div class="empty" style="padding:var(--sp-6) var(--sp-4)"><div class="s">${escapeHtml(t('noMachineAssigned'))}</div>
@@ -2802,6 +2892,38 @@ function projectSwitcher(proj){
     <div class="main"><div class="pname">${escapeHtml(proj.name)}</div><div class="pmeta">${escapeHtml(t('switchProject'))}</div></div>
     ${ic('swap')}
   </div>`;
+}
+function adminMaintenanceAlertCard(machines){
+  let overdueCount=0, dueCount=0;
+  const flagged = [];
+  for (const m of machines){
+    const evals = evaluateMachineMaintenance(m, m.lifetimeHours);
+    const list = dueAndOverdue(evals);
+    overdueCount += list.filter(e=>e.status==='overdue').length;
+    dueCount += list.filter(e=>e.status==='due').length;
+    if (list.length) flagged.push(m.assetNumber);
+  }
+  const total = overdueCount + dueCount;
+  const title = t('dashAlerts').toUpperCase();
+  if (!total){
+    return `<div class="section-head"><div class="section-title">${escapeHtml(title)}</div></div>
+      <div class="card"><div class="row gap-3">${ic('check')}<div class="small muted">${escapeHtml(t('dashMaintOk'))}</div></div></div>`;
+  }
+  return `<div class="section-head"><div class="section-title">${escapeHtml(title)}</div></div>
+    <div class="card tap" data-action="nav" data-route="maintenance">
+      <div class="row gap-3">
+        ${ic('alert')}
+        <div class="main">
+          <div style="font-weight:800">
+            ${overdueCount ? `<span class="num" style="color:var(--c-red)">${overdueCount} ${escapeHtml(t('m_overdue'))}</span>` : ''}
+            ${overdueCount && dueCount ? ' · ' : ''}
+            ${dueCount ? `<span class="num" style="color:var(--c-amber)">${dueCount} ${escapeHtml(t('m_due'))}</span>` : ''}
+          </div>
+          <div class="small muted mt-1">${escapeHtml(flagged.join(', '))}</div>
+        </div>
+        ${ic('chevronRight')}
+      </div>
+    </div>`;
 }
 function adminMachineCard(m){
   const evals = evaluateMachineMaintenance(m, m.lifetimeHours);
